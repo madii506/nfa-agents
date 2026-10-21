@@ -40,26 +40,162 @@ function banner() {
 const DOCS = {
   'readme.md': `<b>nfa — non-fungible agents</b>
 
-launch a coin paired with an NFT collection.
-its agent spends the coin's creator fees buying NFTs from that collection,
-and sends each one to a holder, or to the burn.
+a pump.fun launchpad where every coin is paired with an NFT collection.
+the coin's creator fees pay its own agent. the agent buys that
+collection's NFTs and sends each one to a holder, or to the burn.
 
-  1  you launch a coin on pump.fun, paired with one collection.
-  2  pump.fun's own fee sharing locks the creator fees at launch:
+one coin, one agent, one vault, one collection. the split that pays
+the agent is locked on-chain at launch, so nobody can redirect it.
+not nfa, not the launcher.
+
+<b>how it works</b>
+
+  1  pick a collection. any solana collection on magic eden.  {top}
+  2  launch on pump.fun in one wallet prompt.                 {launch}
+  3  pump.fun's own fee sharing locks the creator fees:
        80%  →  the coin's agent vault
        20%  →  the nfa treasury
-     the admin is revoked in the same wallet prompt, so nobody can
-     change the split again. not nfa, not you.
-  3  the agent reads the collection's listings and picks NFTs with
-     rare traits priced at or near the floor.             {pick}
-  4  each NFT goes to a holder by a draw anyone can check,
-     or to the burn. the coin chooses which at launch.    {draw}
-  5  every buy gets a receipt with its transaction.       {receipts}
+     the admin is revoked in that same prompt.               {cat fees.md}
+  4  the agent reads the collection's listings and buys the
+     rarest NFT priced at or near the floor.                 {cat agent.md}
+  5  each NFT goes to a holder by a draw anyone can check,
+     or to the burn. the coin chooses which at launch.       {cat draw.md}
+  6  every buy, send and burn gets a receipt with its tx.    {receipts}
 
-the treasury's 20% buys back and burns $NFA.
+the treasury's 20% buys back $NFA and burns it.
 
-next:  {launch}  {how}  {cat custody.md}  {cat faq.md}`,
+<b>what it costs</b>
+  only what pump.fun and solana charge, plus 0.001 SOL to open the
+  agent vault. nfa takes no launch fee and never asks for a key.
+
+<b>read on</b>
+  {cat launch.md}    the five steps and what you sign
+  {cat fees.md}      where every fee goes, and why it can't change
+  {cat agent.md}     the rule the agent buys by
+  {cat draw.md}      how a holder wins an NFT, provably
+  {cat receipts.md}  every move, on the record
+  {cat custody.md}   who holds what
+  {cat site.md}      the hall, the three screens, every command
+  {cat faq.md}       questions`,
+  'launch.md': `<b>launching a coin</b>
+
+a launch is five steps in the launch studio and one wallet prompt.
+open it with {launch}, or {launch mad_lads} to start paired.
+
+  01 pair    pick a collection from the board, or paste any magic
+             eden link or symbol. any solana collection listed on
+             magic eden works; a dead or unknown one is refused.
+  02 coin    name, ticker (up to 10 letters), description, and
+             x, telegram or website links if you have them.
+  03 face    generate the coin's picture (↻ for another), or upload
+             your own. drag and drop works.
+  04 agent   where its NFTs go: to holders by draw, or to the burn.
+             set an optional first buy. the studio quotes it live
+             against pump.fun's bonding curve: tokens you get, share
+             of supply, and where the market cap lands.
+  05 launch  connect phantom, solflare or backpack and sign once.
+
+<b>what that one prompt signs</b>
+
+  tx 1  creates the coin on pump.fun, your wallet as creator, and
+        turns on pump.fun's fee sharing for it.
+  tx 2  opens the agent vault (0.001 SOL), sets the 80/20 split
+        and revokes the sharing admin. from here nobody can change it.
+  tx 3  optional: your first buy, made after the fees are routed.
+
+all three are built by nfa's server with pump.fun's own sdk and the
+live chain state, then signed in your wallet. your wallet shows the
+full cost before you sign. nothing moves until you do.
+
+<b>after launch</b>
+  the coin opens on pump.fun, its rack lights up in the hall, and it
+  shows in {coins}. read it any time with {coin} and its mint.
+
+the draft is kept in this browser, so a closed tab loses nothing.
+prefer typing? {launch cli} asks the same questions in the shell.`,
+  'fees.md': `<b>how the fees move</b>
+
+pump.fun charges a creator fee on every trade of a coin. at launch,
+nfa turns on pump.fun's fee sharing for the coin, sets two
+shareholders, and revokes the admin in the same wallet prompt:
+
+  ${'agent vault'.padEnd(14)}8000 bps   80%   buys NFTs from the collection
+  ${'nfa treasury'.padEnd(14)}2000 bps   20%   buys back $NFA and burns it
+
+the split lives in pump.fun's fee sharing program, not in nfa's code.
+with the admin revoked, nobody can change it again: not nfa, not the
+launcher, not anyone who buys the coin later.
+
+<b>getting the fees out</b>
+fees collect in pump.fun's creator vault for the coin. anyone can push
+them out to the two shareholders at any time: {feed} builds that
+transaction for your wallet. you only pay the network fee.
+
+<b>after graduation</b>
+when the coin completes its bonding curve and moves to PumpSwap, the
+same split keeps applying.
+
+check any coin's split on-chain: {coin} shows who the shareholders are,
+whether the admin is revoked, and what's waiting in the vault.`,
+  'agent.md': `<b>how the agent picks</b>
+
+the agent buys the rarest NFT it can find at or near the floor. it
+never chases a grail far above the floor.
+
+  1  read the collection's cheapest listings on magic eden (up to 100)
+     and the floor.
+  2  keep the ones priced at most 10% over the floor
+     (25% if nothing is that close).
+  3  rank them by rarity rank (magic eden, moonrank or howrare,
+     whichever the listing carries).
+  4  pick the rarest. a tie goes to the cheaper one.
+
+why this rule: near the floor the vault's SOL buys the most NFTs, and
+rarity decides which one. every buy is a real listing, at its real
+price, with a receipt.
+
+run it live on any collection:   {pick mad_lads}
+see every candidate it weighed:  {scan mad_lads}
+two collections side by side:    {compare mad_lads okay_bears}`,
+  'draw.md': `<b>the draw, checkable by anyone</b>
+
+a holder coin gives each NFT to one holder. the winner is drawn so
+that nobody, nfa included, can pick or know them in advance.
+
+before a draw, nfa publishes sha256(server seed): the commit.
+the snapshot is every holder's balance at a stated slot.
+the public seed is that slot's blockhash, so nobody knows it early.
+
+  roll   = hmac-sha256(server seed, public seed + ":" + nonce)
+  n      = first 13 hex characters of roll, as a number
+  ticket = n mod (total balance of the snapshot)
+  winner = the holder whose balance range holds the ticket,
+           walking the snapshot sorted by address
+
+your odds are your share of the snapshot: hold 1% of the counted
+supply and the draw is 1% yours.
+
+once the seed is revealed, anyone can replay it and get the same
+winner:  {draw}
+see every step with made-up inputs first:  {draw example}
+
+burn coins skip the draw: each NFT goes to the burn, with a receipt.`,
+  'receipts.md': `<b>every move, on the record</b>
+
+every NFT an agent buys gets a receipt with its transaction and its
+price. so does every NFT it sends to a drawn holder or to the burn.
+
+{receipts} lists them, newest first, each linked to solscan, so any
+buy can be checked against the rule in {cat agent.md}.
+
+no coin is live yet, so there are no receipts yet. the first buy will
+post here with its transaction.`,
   'custody.md': `<b>who holds what</b>
+
+your wallet creates the coin, pump.fun's own program splits the fees,
+and nfa runs the agent. the agent vault is the one place you trust
+nfa: it is not a smart contract, so its rule is a published
+commitment that every receipt can be checked against.
 
   coin          created by your own wallet on pump.fun.
   creator fees  split on-chain by pump.fun's fee sharing program:
@@ -77,45 +213,48 @@ next:  {launch}  {how}  {cat custody.md}  {cat faq.md}`,
                 you sign the launch in your own wallet, once.
 
 check any coin's split on-chain:  {coin}`,
-  'fees.md': `<b>how the fees move</b>
+  'site.md': `<b>the site: a hall with three screens</b>
 
-pump.fun charges a creator fee on every trade of your coin. at launch,
-nfa turns on pump.fun's fee sharing for the coin and sets two
-shareholders, then revokes the admin:
+nfa opens in a white server hall. every part of it is a screen you
+walk up to, and everything answers your cursor.
 
-  ${'agent vault'.padEnd(14)}8000 bps   80%
-  ${'nfa treasury'.padEnd(14)}2000 bps   20%
+<b>the way in</b>
+  the walk starts by itself: the agent, a white cube wearing the nfa
+  face, leads you down an aisle of agent racks. scroll to speed up or
+  walk back. hover a rack and its lights run; click it and the agent
+  scans it. racks of launched coins carry their ticker. the cursor is
+  a tiny agent that opens its brackets over anything you can use.
 
-fees collect in pump.fun's creator vault for the coin. anyone can
-push them out to the two shareholders at any time: {feed} builds that
-transaction for your wallet (you only pay the network fee).
+<b>the three screens</b>
+  left    crypto charts. SOL, BTC, ETH, PUMP, JUP, BONK and WIF, live,
+          with 1h, 1d, 1w and 1m charts. its own room: /?markets
+  middle  the console: this terminal. type on it in the hall and
+          enter runs it in here. direct: /?term
+  right   launch. the launch studio, on its own: /?launch
 
-after the coin graduates to PumpSwap the same split keeps applying.`,
-  'agent.md': `<b>how the agent picks</b>
+<b>in here</b>
+  shell        type, tab completes, ↑ for history, ctrl+k searches all
+  agent pane   what the agent is reading and doing
+  market pane  nfts (magic eden) · crypto · pump.fun, live as coins
+               launch and graduate
+  tape         SOL, BTC, ETH and new pump.fun coins across the top
 
-  1  read the collection's cheapest listings on magic eden (up to 100)
-     and the floor.
-  2  keep the ones priced at most 10% over the floor
-     (25% if nothing is that close).
-  3  rank them by rarity rank (magic eden, moonrank or howrare,
-     whichever the listing carries).
-  4  pick the rarest. a tie goes to the cheaper one.
+<b>commands</b>
+  market  {top}  {scan}  {pick}  {view}  {floor}  {watch}  {info}
+  launch  {launch}  {coins}  {coin}  {feed}  {receipts}  {connect}  {wallet}
+  agent   {agent}  {stats}  {compare}  {draw}  {tour}  {neofetch}
+  live    {crypto}  {price}  {chart}  {pump}
+  docs    {ls}  {cat}  {tree}  {about}
+  shell   {clear}  {history}  {theme}  {sound}  {hall}
 
-run it live on any collection:  {pick mad_lads}
-see every candidate it weighed: {scan mad_lads}`,
-  'draw.md': `<b>the draw, checkable by anyone</b>
+<b>where the numbers come from</b>
+  prices   coinbase (SOL, BTC, ETH) and jupiter (solana tokens)
+  charts   coinbase and geckoterminal
+  nfts     magic eden: listings, floors, rarity ranks
+  pump     pumpportal's live feed and jupiter's token lists
+  chain    solana mainnet, read directly
 
-before a draw, nfa publishes sha256(server seed): the commit.
-the snapshot is every holder's balance at a stated slot.
-the public seed is that slot's blockhash, so nobody knows it early.
-
-  roll   = hmac-sha256(server seed, public seed + ":" + nonce)
-  n      = first 13 hex characters of roll, as a number
-  ticket = n mod (total balance of the snapshot)
-  winner = the holder whose balance range holds the ticket,
-           walking the snapshot sorted by address
-
-once the seed is revealed, anyone can replay it:  {draw}`,
+a dash means no data yet, not zero.`,
   'faq.md': `<b>questions</b>
 
 what is nfa?
@@ -123,7 +262,8 @@ what is nfa?
   pay an agent to buy that collection's NFTs for holders, or the burn.
 
 which collections?
-  any solana collection listed on magic eden. try {top}.
+  any solana collection listed on magic eden. the board in the studio
+  shows the busiest; paste a link for any other. try {top}.
 
 what does a launch cost?
   what pump.fun and solana charge (your wallet shows it before you
@@ -132,9 +272,32 @@ what does a launch cost?
 can the 80/20 change later?
   no. the admin is revoked in the launch itself.
 
+does it keep working after the coin graduates?
+  yes. pump.fun's fee sharing keeps applying on PumpSwap.
+
+who pushes the fees out of pump.fun's vault?
+  anyone, any time. {feed} builds the transaction; you pay the network fee.
+
+how does the agent choose?
+  the rarest listing within 10% of the floor. read {cat agent.md}.
+
+how do holders win?
+  a commit-reveal draw seeded by a solana blockhash; odds = your share
+  of the snapshot. anyone can replay it. read {cat draw.md}.
+
 who holds the NFTs?
   the agent vault, until the draw sends each one out or burns it.
   read {cat custody.md}.
+
+where does the treasury's 20% go?
+  it buys back $NFA and burns it.
+
+do I need to hold $NFA to launch?
+  no. anyone with a solana wallet can launch.
+
+which wallets?
+  phantom, solflare and backpack. on a phone, open the site inside the
+  wallet's own browser. {connect}
 
 is nfa financial advice?
   nfa. it is not. nothing here is a promise of price or profit.
@@ -143,7 +306,7 @@ is nfa part of pump.fun, magic eden or tensor?
   no. independent, and not affiliated with any of them.`,
   'links.txt': '',
 };
-const DIRS = { '/': ['readme.md', 'custody.md', 'fees.md', 'agent.md', 'draw.md', 'faq.md', 'links.txt', 'coins/'] };
+const DIRS = { '/': ['readme.md', 'launch.md', 'fees.md', 'agent.md', 'draw.md', 'receipts.md', 'custody.md', 'site.md', 'faq.md', 'links.txt', 'coins/'] };
 
 // ---------------------------------------------------------------- the terminal
 export function start({ sound, from, coins: initialCoins = [], mobile, solo, cmd }) {
