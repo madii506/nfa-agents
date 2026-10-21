@@ -130,6 +130,7 @@ export function install(T) {
     complete: () => ['cli', ...((T.market && T.market.symbols && T.market.symbols()) || [])],
     async run(a, ctx) {
       if (/^(cli|--cli|text)$/i.test(a[0] || '')) return wizard(a.slice(1), ctx);
+      if (!T.studio && T.studioReady) await T.studioReady;
       if (T.studio) { T.studio.open({ c: a[0] }); print(`<span class="dim">launch studio open${a[0] ? ' · paired with ' + esc(a[0]) : ''} · esc closes it ·</span> ${k('launch cli', 'or answer it here')}`); return; }
       return wizard(a, ctx);
     } });
@@ -340,5 +341,5 @@ export function install(T) {
   // ---------------------------------------------------------------- the studio gets the same parts
   const K = { W, PROVS, STEPS, mobileUA, short, sol, human, connectTo, logout, balance, launchCore, liveCard, route, generated, fromFile, pickFile, dataUrl, shareUrl, loadWeb3 };
   T.launchKit = K;
-  import('./studio.js').then(m => m.installStudio(T, K)).catch(e => console.warn('studio', e));
+  T.studioReady = import('./studio.js').then(m => m.installStudio(T, K)).catch(e => console.warn('studio', e));
 }
