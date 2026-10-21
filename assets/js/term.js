@@ -146,7 +146,7 @@ is nfa part of pump.fun, magic eden or tensor?
 const DIRS = { '/': ['readme.md', 'custody.md', 'fees.md', 'agent.md', 'draw.md', 'faq.md', 'links.txt', 'coins/'] };
 
 // ---------------------------------------------------------------- the terminal
-export function start({ sound, from, coins: initialCoins = [], mobile }) {
+export function start({ sound, from, coins: initialCoins = [], mobile, go }) {
   const out = $('#out'), input = $('#cmd'), typed = $('#typed'), after = $('#after'), ghost = $('#ghost'), cur = $('#cur'), ps1 = $('#ps1');
   const app = $('#app'), alog = $('#alog'), faceEl = $('#face'), astat = $('#astat');
   const cmds = new Map(), alias = new Map();
@@ -594,7 +594,9 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
     // links into the site: ?coin=<mint> opens a coin, ?launch (or ?pair=<collection>) opens the launch studio
     { const u = new URLSearchParams(location.search), c = u.get('coin'), pr = u.get('pair');
       if (c && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(c)) run(T.coins.some(x => x.mint === c) ? 'coin ' + c : 'pump ' + c);
-      else if (u.has('launch') || pr) run('launch' + (pr && /^[a-z0-9_\-]{2,64}$/i.test(pr) ? ' ' + pr : '')); }
+      else if (u.has('launch') || pr) run('launch' + (pr && /^[a-z0-9_\-]{2,64}$/i.test(pr) ? ' ' + pr : ''));
+      else if (go === 'launch') run('launch');
+      else if (go === 'market') run('pump'); }
     if (!mobile) input.focus({ preventScroll: true });
     if (sound) sound.sfx('ok');
   })();

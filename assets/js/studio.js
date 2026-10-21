@@ -27,7 +27,8 @@ export function installStudio(T, K) {
   const bytes = s => new TextEncoder().encode(s).length;
   const rnd = () => (Math.random() * 2147483646 + 1) | 0;
   const normSym = v => { v = String(v || '').trim(); const m = /magiceden\.(?:io|us)\/(?:marketplace|collections\/solana|collections)\/([A-Za-z0-9_\-]+)/i.exec(v); return (m ? m[1] : v).toLowerCase().replace(/\s+/g, '_'); };
-  const faceCache = {}; const faceUrl = c => faceCache[c] || (faceCache[c] = PX.canvas(PX.hashSeed(c), 6).toDataURL());
+  // a collection whose picture won't load shows its initial, not a made-up face
+  const faceCache = {}; const faceUrl = c => { const x = all().find(v => v.c === c), ch = String((x && x.name) || c).charAt(0).toUpperCase().replace(/[^A-Z0-9]/, '?'); return faceCache[ch] || (faceCache[ch] = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60"><rect width="60" height="60" fill="#eef0f2"/><text x="30" y="39" font-family="monospace" font-size="26" font-weight="700" text-anchor="middle" fill="#b1b5bb">${ch}</text></svg>`)); };
 
   const S = { step: 0, max: 0, coll: null, pick: null, name: '', symbol: '', symTouched: false, desc: '', descTouched: false,
     links: { twitter: '', telegram: '', website: '' }, face: null, seed: rnd(), ground: null, hist: [], policy: 'holders', buy: 0, quote: null,
@@ -185,7 +186,7 @@ export function installStudio(T, K) {
   function tile(x, i, maxV) {
     const on = S.coll && S.coll.c === x.c, w = x.vol7 ? Math.max(4, Math.round(x.vol7 / maxV * 100)) : 0;
     return `<button type="button" class="stu-tile${on ? ' on' : ''}" data-c="${esc(x.c)}" style="--i:${Math.min(i, 14)}" aria-pressed="${on}">
-      <span class="im">${x.image ? `<img src="${esc(img(x.image, 260))}" alt="" loading="lazy" decoding="async" onerror="this.src='${faceUrl(x.c)}';this.className='px';this.onerror=null">` : `<img class="px" src="${faceUrl(x.c)}" alt="">`}</span>
+      <span class="im">${x.image ? `<img src="${esc(img(x.image, 260))}" alt="" loading="lazy" decoding="async" data-ph="${faceUrl(x.c)}" onerror="__imgfb(this)">` : `<img src="${faceUrl(x.c)}" alt="">`}</span>
       <span class="nm">${esc(x.name)}</span>
       <span class="st"><b>${solf(x.floor)} ◎</b> floor<em>·</em>${x.listed != null ? Number(x.listed).toLocaleString() : '—'} listed</span>
       <span class="vb" title="seven-day volume"><i data-w="${w}%"></i></span>
@@ -247,7 +248,7 @@ export function installStudio(T, K) {
     if (S.coll.floor == null) S.coll.floor = d.floor;
     const list = (d.cands || []).slice(0, 8);
     note.innerHTML = d.pick ? `the rarest listing within ${d.band}% of the floor wins · ${d.weighed || list.length} weighed · rarity from ${esc(d.pick.src || 'magic eden')}` : esc(d.why || 'its cheapest listings');
-    strip.innerHTML = list.map((l, i) => `<a class="stu-nft${d.pick && l.mint === d.pick.mint ? ' pick' : ''}" style="--i:${i}" href="https://magiceden.io/item-details/${encodeURIComponent(l.mint)}" target="_blank" rel="noopener" title="${esc(l.name || '')}"><span class="im"><img src="${esc(img(l.img, 200))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">${d.pick && l.mint === d.pick.mint ? '<em>its pick</em>' : ''}</span><b>${solf(l.price)} ◎</b><span>${l.rank ? 'rank ' + l.rank.toLocaleString() : 'no rank'}</span></a>`).join('') || `<p class="stu-empty">${esc(d.why || 'nothing is listed right now')}</p>`;
+    strip.innerHTML = list.map((l, i) => `<a class="stu-nft${d.pick && l.mint === d.pick.mint ? ' pick' : ''}" style="--i:${i}" href="https://magiceden.io/item-details/${encodeURIComponent(l.mint)}" target="_blank" rel="noopener" title="${esc(l.name || '')}"><span class="im"><img src="${esc(img(l.img, 200))}" alt="" loading="lazy" onerror="__imgfb(this)">${d.pick && l.mint === d.pick.mint ? '<em>its pick</em>' : ''}</span><b>${solf(l.price)} ◎</b><span>${l.rank ? 'rank ' + l.rank.toLocaleString() : 'no rank'}</span></a>`).join('') || `<p class="stu-empty">${esc(d.why || 'nothing is listed right now')}</p>`;
     pv();
   }
 
@@ -537,7 +538,7 @@ export function installStudio(T, K) {
   function open(o = {}) {
     if (!root) build();
     if (S.done && !S.busy) again();
-    loadBoard().then(() => { restore(); renderGrid(); fillInputs(); if (S.face) { paintStage(); paintFaceCtl(); } pv();
+    loadBoard().then(() => { const had = S.extra.length; restore(); if (S.extra.length !== had || S.coll) renderGrid(); fillInputs(); if (S.face) { paintStage(); paintFaceCtl(); } pv();
       const want = o.c ? normSym(o.c) : null;
       if (want && symOk(want)) { if (all().some(x => x.c === want)) select(want, true); else check(want); show(0, { quiet: true }); }
       else show(S.step, { quiet: true });

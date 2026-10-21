@@ -22,8 +22,8 @@ export function install(T) {
   function paneRender() {
     if (!popular.length) { pane.innerHTML = `<div class="mnote">${mstate === 'offline' ? 'Magic Eden didn’t answer. Retrying in a minute.' : 'Reading the market…'}</div>`; return; }
     const vmax = Math.max(...popular.map(p => p.vol7 || 0)) || 1;
-    pane.innerHTML = `<div class="mrow hd"><span>#</span><span></span><span>collection</span><span>floor ◎</span><span>listed</span></div>` + popular.slice(0, 14).map((p, i) =>
-      `<div class="mrow${prevFloors[p.c] != null && prevFloors[p.c] !== p.floor ? ' flash' : ''}" data-c="${esc(p.c)}" title="scan ${esc(p.c)}" style="animation-delay:${i * 30}ms"><span class="n">${String(i + 1).padStart(2, '0')}</span>${p.image ? `<img src="${esc(img(p.image, 64))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<i class="ph">${esc(p.name.slice(0, 1))}</i>`}<span class="nm">${esc(p.name)}<u style="width:${Math.max(2, (p.vol7 || 0) / vmax * 100).toFixed(1)}%"></u></span><span class="fl">${sol(p.floor)}</span><span class="ls">${p.listed ?? '—'}</span></div>`).join('');
+    pane.innerHTML = `<div class="mrow hd"><span>#</span><span></span><span>collection</span><span>floor ◎</span><span>listed</span></div>` + popular.slice(0, 80).map((p, i) =>
+      `<div class="mrow${prevFloors[p.c] != null && prevFloors[p.c] !== p.floor ? ' flash' : ''}" data-c="${esc(p.c)}" title="scan ${esc(p.c)}" style="animation-delay:${Math.min(i, 20) * 30}ms"><span class="n">${String(i + 1).padStart(2, '0')}</span>${p.image ? `<img src="${esc(img(p.image, 64))}" alt="" loading="lazy" onerror="__imgfb(this)">` : `<i class="ph">${esc(p.name.slice(0, 1))}</i>`}<span class="nm">${esc(p.name)}<u style="width:${Math.max(2, (p.vol7 || 0) / vmax * 100).toFixed(1)}%"></u></span><span class="fl">${sol(p.floor)}</span><span class="ls">${p.listed ?? '—'}</span></div>`).join('');
     prevFloors = Object.fromEntries(popular.map(p => [p.c, p.floor]));
   }
   pane.addEventListener('click', e => { const r = e.target.closest('.mrow[data-c]'); if (r) T.run('scan ' + r.dataset.c); });
@@ -43,7 +43,7 @@ export function install(T) {
     const p = d.pick; if (!p) return null;
     const el = document.createElement('div'); el.className = 'card';
     const v = vs(p.price, d.floor);
-    el.innerHTML = `<div class="shot"><img src="${esc(img(p.img, 360))}" alt="" onerror="this.style.visibility='hidden'"><div class="vf wide"><i></i><i></i><i></i><i></i></div></div>
+    el.innerHTML = `<div class="shot"><img src="${esc(img(p.img, 360))}" alt="" onerror="__imgfb(this)"><div class="vf wide"><i></i><i></i><i></i><i></i></div></div>
       <div class="meta"><span class="tag">${o.tag || 'agent pick'}</span><h4>${esc(p.name || p.mint)}</h4>
       <div>rank <b>${p.rank}</b>${p.supply ? ` <span class="dim">of ${p.supply.toLocaleString()}</span>` : ''} <span class="dim">· ${esc(p.src || 'rarity')}</span></div>
       <div>price <b>${sol(p.price)} ◎</b> <span class="dim">· floor ${sol(d.floor)} ◎ · ${pc(v)}</span></div>
@@ -108,7 +108,7 @@ export function install(T) {
       if (!d.ok) { s.fail(esc(d.error)); return; }
       s.done(`<b>${esc(d.name)}</b> <span class="dim">· floor ${sol(d.floor)} ◎ · cheapest ${Math.min(d.listings.length, T.mobile ? 8 : 16)} of ${d.listed ?? d.listings.length} listed</span>`);
       const g = document.createElement('div'); g.className = 'grid';
-      g.innerHTML = d.listings.slice(0, T.mobile ? 8 : 16).map((l, i) => `<a href="${ITEM(l.mint)}" target="_blank" rel="noopener" style="animation-delay:${i * 35}ms"><img src="${esc(img(l.img, 240))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><b>${sol(l.price)} ◎</b><em>${esc(l.name)}</em><em>${l.rank ? 'rank ' + l.rank : 'no rank'}</em></a>`).join('');
+      g.innerHTML = d.listings.slice(0, T.mobile ? 8 : 16).map((l, i) => `<a href="${ITEM(l.mint)}" target="_blank" rel="noopener" style="animation-delay:${i * 35}ms"><img src="${esc(img(l.img, 240))}" alt="" loading="lazy" onerror="__imgfb(this)"><b>${sol(l.price)} ◎</b><em>${esc(l.name)}</em><em>${l.rank ? 'rank ' + l.rank : 'no rank'}</em></a>`).join('');
       T.node(g);
       print(`<span class="dim">${k('pick ' + c, 'what would the agent pick?')} · <a class="lk" href="${ME(c)}" target="_blank" rel="noopener">open on magic eden ↗</a></span>`);
     } });

@@ -264,8 +264,11 @@ function build(scene, mobile) {
     g.font = `500 18px ${FONT}`; g.fillStyle = '#8a8e95'; g.fillText(v ? 'vault watch' : 'market feed', 16, 26);
   });
   const monScreen = monitor(1.18, .686, MON.x, MON.y, MON.z, 0, screen.t);
-  monitor(.84, .49, -1.36, 1.22, -40.95, .46, side(0));
-  monitor(.84, .49, 1.36, 1.22, -40.95, -.46, side(1));
+  // the two side screens are drawn live in run(): market feed on the left, the launch studio on the right
+  const sideC = [0, 1].map(() => { const c = document.createElement('canvas'); c.width = 512; c.height = 300; return c; });
+  const sideT = sideC.map((c, i) => { c.getContext('2d').drawImage(side(i).image, 0, 0); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; });
+  const sideL = monitor(.84, .49, -1.36, 1.22, -40.95, .46, sideT[0]);
+  const sideR = monitor(.84, .49, 1.36, 1.22, -40.95, -.46, sideT[1]);
   add(new THREE.BoxGeometry(.5, .02, .17), std({ color: 0xe6e8eb, roughness: .5 }), 0, .79, -40.25);
 
   // the agent: a white cube wearing the mark, a thin black ring under it
@@ -299,7 +302,7 @@ function build(scene, mobile) {
     Object.assign(key.shadow.camera, { left: -16, right: 16, top: 34, bottom: -34, near: 1, far: 50 }); key.shadow.camera.updateProjectionMatrix();
   }
   const fill = new THREE.DirectionalLight(0xf3f6ff, .7); fill.position.set(5, 6, 10); scene.add(fill);
-  return { racks, main, leds, ledMesh, label, screen, monScreen, wallC, wallT, faceC, faceT, agent, shell, ring, scanGeo, scanMat, mirror, doors, wallEyes, wallDot, faceEyes, blob, dustU };
+  return { racks, main, leds, ledMesh, label, screen, monScreen, sideL, sideR, sideC, sideT, wallC, wallT, faceC, faceT, agent, shell, ring, scanGeo, scanMat, mirror, doors, wallEyes, wallDot, faceEyes, blob, dustU };
 }
 
 // ---------------------------------------------------------------- camera
@@ -381,7 +384,59 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
   SCANS.forEach((s, k) => { const r = scanRack(k); s.z = r.z; s.rack = r; });
   const rackText = r => r.coin ? `${r.id} · $${r.coin.symbol} · ${r.coin.coll || 'agent'}` : `${r.id} · open slot · launch a coin to fill it`;
 
-  const st = { phase: 'idle', t0: performance.now(), filmT: 0, wv: 0, tDive: 0, freeze: null, mx: 0, my: 0, px: 0, py: 0, blinkAt: 2, hover: false, lean: 0, done: false, skip: false,
+  // the side screens: live data, and each one a door into the site
+  const SIDE = [
+    { mesh: P.sideL, x: -1.36, ry: .46, key: 'market', label: 'market feed · click to open it' },
+    { mesh: P.sideR, x: 1.36, ry: -.46, key: 'launch', label: 'launch studio · click to launch a coin' },
+  ].map(o => { const c = V(o.x, 1.22, -40.95), n = V(Math.sin(o.ry), 0, Math.cos(o.ry)), rt = V(Math.cos(o.ry), 0, -Math.sin(o.ry));
+    return { ...o, c, end: c.clone().add(n.clone().multiplyScalar(.17)), corners: [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => c.clone().add(rt.clone().multiplyScalar(a * .42)).add(V(0, b * .245, 0))) }; });
+  const D = { prices: null, pump: [], board: [], at: 0 };
+  const getJ = u => fetch(u).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  async function feed() {
+    const [a, b, c] = await Promise.all([getJ('/api/mkt?op=prices'), getJ('/api/mkt?op=pump&k=new'), D.board.length ? null : getJ('/api/me?op=popular')]);
+    if (a && a.ok) D.prices = a.list; if (b && b.ok) D.pump = b.list || []; if (c && c.ok) D.board = c.list || [];
+    D.at = Date.now(); drawSide(0, performance.now()); drawSide(1, performance.now());
+  }
+  const fmt = v => v == null || !isFinite(v) ? '—' : v >= 1000 ? '$' + Math.round(v).toLocaleString('en-US') : v >= 1 ? '$' + v.toFixed(2) : '$' + v.toPrecision(3);
+  const kfmt = v => v == null || !isFinite(v) ? '—' : v >= 1e6 ? '$' + (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? '$' + (v / 1e3).toFixed(1) + 'K' : '$' + Math.round(v);
+  const pc = v => v == null || !isFinite(v) ? '' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  function drawSide(i, now) {
+    const g = P.sideC[i].getContext('2d'), W = 512, H = 300, tick = Math.floor(now / 600) % 2 === 0, hot = st && st.sideHov === i;
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#f0f1f3'; g.lineWidth = 1; for (let x = 32; x < W; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); } for (let y = 30; y < H; y += 30) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+    g.textBaseline = 'alphabetic'; g.font = `600 16px ${FONT}`; g.fillStyle = '#8a8e95'; g.textAlign = 'left';
+    g.fillText(i ? 'launch studio' : 'market feed', 18, 30);
+    g.textAlign = 'right'; g.fillStyle = tick ? '#0b0c0e' : '#b1b5bb'; g.fillText('● live', W - 18, 30); g.textAlign = 'left';
+    if (i === 0) {
+      const sol = D.prices && D.prices.find(p => p.s === 'SOL');
+      g.fillStyle = '#0b0c0e'; g.font = `700 40px ${FONT}`; g.fillText(sol ? 'SOL ' + fmt(sol.price) : 'SOL —', 18, 78);
+      if (sol) { g.font = `600 18px ${FONT}`; g.fillStyle = sol.chg < 0 ? '#c4302b' : '#0b0c0e'; g.fillText(pc(sol.chg) + ' 24h', 20, 104); }
+      const sp = sol && sol.spark && sol.spark.length > 1 ? sol.spark : null;
+      if (sp) { const lo = Math.min(...sp), hi = Math.max(...sp), r = hi - lo || 1; g.strokeStyle = sol.chg < 0 ? '#c4302b' : '#0b0c0e'; g.lineWidth = 3; g.lineJoin = 'round'; g.beginPath(); sp.forEach((v, k) => { const x = 250 + k / (sp.length - 1) * 244, y = 102 - (v - lo) / r * 52; k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); }
+      g.font = `500 17px ${FONT}`;
+      const rows = (D.prices || []).filter(p => p.s === 'BTC' || p.s === 'ETH');
+      rows.forEach((p, k) => { const y = 140 + k * 26; g.fillStyle = '#0b0c0e'; g.fillText(p.s, 20, y); g.fillText(fmt(p.price), 80, y); g.fillStyle = p.chg < 0 ? '#c4302b' : '#6b6f75'; g.fillText(pc(p.chg), 250, y); });
+      g.fillStyle = '#8a8e95'; g.font = `600 14px ${FONT}`; g.fillText('new on pump.fun', 20, 192);
+      g.font = `500 17px ${FONT}`;
+      (D.pump || []).slice(0, 2).forEach((c, k) => { const y = 214 + k * 22; g.fillStyle = '#0b0c0e'; g.fillText(('$' + (c.symbol || '?')).slice(0, 12), 20, y); g.fillStyle = '#6b6f75'; g.fillText(kfmt(c.mcap), 190, y); });
+      if (!(D.pump || []).length) { g.fillStyle = '#b1b5bb'; g.fillText(D.at ? 'listening…' : 'reading…', 20, 214); }
+    } else {
+      g.fillStyle = '#0b0c0e'; g.font = `700 36px ${FONT}`; g.fillText('launch a coin', 18, 76);
+      g.font = `500 18px ${FONT}`; g.fillStyle = '#6b6f75'; g.fillText('paired with an NFT collection', 20, 104);
+      const b = D.board || [], off = b.length ? Math.floor(now / 2600) % b.length : 0;
+      g.font = `500 17px ${FONT}`;
+      for (let k = 0; k < 3 && k < b.length; k++) { const c = b[(off + k) % b.length], y = 140 + k * 26; g.fillStyle = '#0b0c0e'; g.fillText(String(c.name).slice(0, 22), 20, y); g.fillStyle = '#6b6f75'; g.textAlign = 'right'; g.fillText(c.floor != null ? c.floor.toFixed(c.floor >= 1 ? 2 : 3) + ' ◎' : '—', W - 20, y); g.textAlign = 'left'; }
+      if (!b.length) { g.fillStyle = '#b1b5bb'; g.fillText('reading magic eden…', 20, 140); }
+      g.fillStyle = '#8a8e95'; g.font = `500 14px ${FONT}`; g.fillText('80% of fees → its agent · 20% → treasury', 20, 226);
+    }
+    // the door
+    g.fillStyle = hot ? '#0b0c0e' : '#ffffff'; g.strokeStyle = '#0b0c0e'; g.lineWidth = 2; g.fillRect(18, 248, 220, 36); g.strokeRect(18, 248, 220, 36);
+    g.fillStyle = hot ? '#ffffff' : '#0b0c0e'; g.font = `700 16px ${FONT}`; g.fillText(i ? 'click to launch  ›' : 'click to open  ›', 32, 272);
+    P.sideT[i].needsUpdate = true;
+  }
+  const feedT = setInterval(() => { if (!document.hidden) feed(); }, 20000);
+  setTimeout(feed, 300);
+  const st = { phase: 'idle', t0: performance.now(), sideHov: -1, sideT: 0, sideDraw: 0, target: null, filmT: 0, wv: 0, tDive: 0, freeze: null, mx: 0, my: 0, px: 0, py: 0, blinkAt: 2, hover: false, lean: 0, done: false, skip: false,
     hov: null, hovT: 0, userScan: null, poke: 0, ledT: 0, scrKey: '', diveAcc: 0, moved: 0 };
   const setPhase = p => { st.phase = p; onPhase && onPhase(p); };
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(9, 9);
@@ -452,9 +507,12 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     return r && r.row === 0 ? r : null;
   }
   const pickAgent = () => { ray.setFromCamera(ndc, cam); return ray.intersectObject(P.shell, false).length > 0; };
+  const sideMeshes = SIDE.map(o => o.mesh);
+  const pickSide = () => { ray.setFromCamera(ndc, cam); const h = ray.intersectObjects(sideMeshes, false)[0]; return h && h.distance < 15 ? sideMeshes.indexOf(h.object) : -1; };
   const click = e => {
     ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight * 2 - 1));
     if (st.phase === 'dive' || st.done) return;
+    { const si = pickSide(); if (si >= 0) { st.target = SIDE[si]; sfx('ok'); if (st.phase === 'ready') dive(); else { st.pending = true; skip(); } return; } }
     if (pickAgent()) { st.poke = performance.now(); sfx('ok'); return; }
     const r = st.phase !== 'ready' ? pickRack() : null;
     if (r) { st.userScan = { r, t0: performance.now(), from: P.agent.position.clone() }; sfx('scan'); return; }
@@ -464,11 +522,12 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
 
   // brackets over racks, drawn in the page so they stay crisp: one for the agent's scan, one for your cursor
   const mkEl = cls => { const m = document.createElement('div'); m.className = 'mk ' + cls; m.innerHTML = '<i></i><i></i><i></i><i></i><b></b>'; marks.appendChild(m); return { el: m, label: m.querySelector('b') }; };
-  const MK = mkEl('scan'), HV = mkEl('hov');
+  const MK = mkEl('scan'), HV = mkEl('hov'), SV = mkEl('hov');
   const proj = v => { const p = v.clone().project(cam); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight, z: p.z }; };
-  function showMark(M, r, k, text) {
-    if (!r || k <= 0) { if (M.el.style.opacity !== '0') M.el.style.opacity = 0; return; }
-    const pts = [V(r.face, .2, r.z - RW / 2), V(r.face, .2, r.z + RW / 2), V(r.face, RH - .05, r.z - RW / 2), V(r.face, RH - .05, r.z + RW / 2)].map(proj);
+  function showMark(M, r, k, text) { return showBox(M, r ? [V(r.face, .2, r.z - RW / 2), V(r.face, .2, r.z + RW / 2), V(r.face, RH - .05, r.z - RW / 2), V(r.face, RH - .05, r.z + RW / 2)] : null, k, text); }
+  function showBox(M, corners, k, text) {
+    if (!corners || k <= 0) { if (M.el.style.opacity !== '0') M.el.style.opacity = 0; return; }
+    const pts = corners.map(proj);
     if (pts.some(p => p.z > 1)) { M.el.style.opacity = 0; return; }
     const x0 = Math.min(...pts.map(p => p.x)), x1 = Math.max(...pts.map(p => p.x)), y0 = Math.min(...pts.map(p => p.y)), y1 = Math.max(...pts.map(p => p.y)), pad = 8 + (1 - k) * 26;
     M.el.style.cssText = `opacity:${k};left:${x0 - pad}px;top:${y0 - pad}px;width:${x1 - x0 + pad * 2}px;height:${y1 - y0 + pad * 2}px`;
@@ -533,10 +592,11 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     if (st.lean > .001) { pos.lerp(V(MON.x, MON.y + .05, MON.z + 1.4), st.lean * .18); look.lerp(MON, st.lean * .3); }
     if (st.phase === 'dive') {
       const d = clamp01((now - st.tDive) / 1900), e = easeIn(d);
-      pos = st.diveFrom.clone().lerp(V(MON.x, MON.y, MON.z + .2), e); look = st.diveLook.clone().lerp(MON, Math.min(1, e * 2)); fov = f1 - e * 6;
-      scr.dive = clamp01((d - .25) / .75); scr.dirty = true;
+      const tg = st.target;
+      pos = st.diveFrom.clone().lerp(tg ? tg.end : V(MON.x, MON.y, MON.z + .2), e); look = st.diveLook.clone().lerp(tg ? tg.c : MON, Math.min(1, e * 2)); fov = f1 - e * 6;
+      if (!tg) { scr.dive = clamp01((d - .25) / .75); scr.dirty = true; }
       renderer.toneMappingExposure = 1 + e * .6;
-      if (d >= 1 && !st.done && !(st.freeze && st.freeze.dive != null)) { st.done = true; cleanup(); onEnter && onEnter(); return; }
+      if (d >= 1 && !st.done && !(st.freeze && st.freeze.dive != null)) { st.done = true; cleanup(); onEnter && onEnter(st.target ? st.target.key : null); return; }
     }
     if (Math.abs(cam.fov - fov) > .001) { cam.fov = fov; cam.updateProjectionMatrix(); }
     st.look = look; cam.position.copy(pos); cam.lookAt(look);
@@ -602,6 +662,14 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
       st.hovT = now; const r = pickRack();
       if (r !== st.hov) { st.hov = r; canvas.style.cursor = r ? 'pointer' : 'default'; if (r) sfx('tick'); }
     }
+    if (!mobile && st.phase !== 'dive' && st.phase !== 'idle' && now - st.sideT > 70 && now - st.moved < 1500) {
+      st.sideT = now; const si = pickSide();
+      if (si !== st.sideHov) { st.sideHov = si; if (si >= 0) sfx('tick'); drawSide(0, now); drawSide(1, now); }
+    }
+    if (st.phase === 'dive' || st.phase === 'idle') st.sideHov = -1;
+    canvas.style.cursor = st.sideHov >= 0 || st.hov || (st.phase === 'ready' && st.hover) ? 'pointer' : 'default';
+    showBox(SV, st.sideHov >= 0 ? SIDE[st.sideHov].corners : null, 1, st.sideHov >= 0 ? SIDE[st.sideHov].label : '');
+    if (now - st.sideDraw > 600 && st.phase !== 'dive' && cam.position.z < -28) { st.sideDraw = now; drawSide(0, now); drawSide(1, now); }
     if (st.phase === 'ready' || st.phase === 'dive') st.hov = null;
     if (st.hov && st.hov !== sR) showMark(HV, st.hov, 1, rackText(st.hov) + ' · click to scan'); else showMark(HV, null, 0);
     if (now - st.ledT > 50 || window.__shots) { st.ledT = now; lights(tAll, st.scanRack, st.sweep); }
@@ -609,7 +677,7 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     scr.draw(now);
     renderer.render(scene, cam);
   }
-  function cleanup() { removeEventListener('keydown', key); removeEventListener('resize', resize); removeEventListener('pointermove', pm); canvas.removeEventListener('click', click); canvas.removeEventListener('wheel', wheel); setTimeout(() => { renderer.dispose(); }, 1500); }
+  function cleanup() { clearInterval(feedT); removeEventListener('keydown', key); removeEventListener('resize', resize); removeEventListener('pointermove', pm); canvas.removeEventListener('click', click); canvas.removeEventListener('wheel', wheel); setTimeout(() => { renderer.dispose(); }, 1500); }
   if (!window.__shots) requestAnimationFrame(frame);
   return api;
 }

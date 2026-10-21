@@ -15,8 +15,8 @@ export function install(T) {
   const short = a => a ? a.slice(0, 4) + '…' + a.slice(-4) : '';
   const isMint = s => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s || '');
   const visible = () => document.visibilityState === 'visible';
-  let PX = null; import('./px.js').then(m => { PX = m; }).catch(() => {});
-  const faces = {}; const face = m => faces[m] || (PX ? (faces[m] = PX.canvas(PX.hashSeed(m), 4).toDataURL()) : '');
+  // a neutral stand-in until a coin's own picture arrives: its first letter, never a made-up face
+  const faces = {}; const face = (m, sym) => { const ch = String(sym || '?').trim().charAt(0).toUpperCase().replace(/[^A-Z0-9$]/, '?'); return faces[ch] || (faces[ch] = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#e5e7ea"/><text x="20" y="26" font-family="monospace" font-size="16" font-weight="700" text-anchor="middle" fill="#777c83">${ch}</text></svg>`)); };
 
   // ================================================================ crypto: SOL, BTC, ETH and a few Solana names
   let prices = [], pState = 'reading', pAt = 0;
@@ -119,15 +119,15 @@ export function install(T) {
     const t = $('#ltape .lt-l .dot'); if (t) t.classList.toggle('on', P.state === 'live');
   }
   function rowHtml(r) {
-    const m = mcapOf(r), pic = r.icon ? img(r.icon, 64) : face(r.mint);
-    return `<span class="im"><img src="${esc(pic)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></span><span class="nm"><b>$${esc(r.symbol || '?')}</b><em>${esc(r.name || '')}</em></span><span class="mc">${usd(m)}</span><span class="ag" data-t="${r.t}">${r.grad ? 'grad' : ago(r.t)}</span>`;
+    const m = mcapOf(r), pic = r.icon ? img(r.icon, 64) : face(r.mint, r.symbol);
+    return `<span class="im"><img src="${esc(pic)}" data-ph="${face(r.mint, r.symbol)}" alt="" loading="lazy" onerror="__imgfb(this)"></span><span class="nm"><b>$${esc(r.symbol || '?')}</b><em>${esc(r.name || '')}</em></span><span class="mc">${usd(m)}</span><span class="ag" data-t="${r.t}">${r.grad ? 'grad' : ago(r.t)}</span>`;
   }
   function renderPump() {
     const el = $('#mktP'); if (!el) return;
     const head = `<div class="ptab2"><button type="button" data-k="new" class="${pk === 'new' ? 'on' : ''}">new</button><button type="button" data-k="hot" class="${pk === 'hot' ? 'on' : ''}">trending 5m</button><span>${pk === 'new' ? 'newest first · click one' : 'by jupiter’s 5-minute trend'}</span></div>`;
     if (pk === 'hot') {
       if (!P.hot.length) { el.innerHTML = head + '<div class="mnote">Reading what’s moving on pump.fun…</div>'; loadHot(); return; }
-      el.innerHTML = head + `<div class="plist">${P.hot.map((t, i) => `<div class="prow" data-mint="${esc(t.mint)}" style="animation-delay:${i * 24}ms"><span class="im"><img src="${esc(t.icon ? img(t.icon, 64) : face(t.mint))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></span><span class="nm"><b>$${esc(t.symbol)}</b><em>${esc(t.name)}</em></span><span class="mc">${usd(t.mcap)}</span><span class="ch ${dir(t.ch5m)}">${pct(t.ch5m)}</span></div>`).join('')}</div>`;
+      el.innerHTML = head + `<div class="plist">${P.hot.map((t, i) => `<div class="prow" data-mint="${esc(t.mint)}" style="animation-delay:${i * 24}ms"><span class="im"><img src="${esc(t.icon ? img(t.icon, 64) : face(t.mint, t.symbol))}" data-ph="${face(t.mint, t.symbol)}" alt="" loading="lazy" onerror="__imgfb(this)"></span><span class="nm"><b>$${esc(t.symbol)}</b><em>${esc(t.name)}</em></span><span class="mc">${usd(t.mcap)}</span><span class="ch ${dir(t.ch5m)}">${pct(t.ch5m)}</span></div>`).join('')}</div>`;
       return;
     }
     if (!P.list.length) { el.innerHTML = head + `<div class="mnote">${P.state === 'live' ? 'Listening for the next pump.fun launch…' : 'Connecting to pump.fun…'}</div>`; return; }
@@ -159,10 +159,10 @@ export function install(T) {
   function tapeCoin(r) {
     const el = $('#ltP'); if (!el || document.hidden) return;
     const b = document.createElement('button'); b.type = 'button'; b.className = 'lt-p1'; b.dataset.mint = r.mint;
-    b.innerHTML = `<img src="${esc(r.icon ? img(r.icon, 40) : face(r.mint))}" alt="" onerror="this.style.visibility='hidden'"><b>$${esc(r.symbol || '?')}</b><span>${usd(mcapOf(r))}</span>`;
+    b.innerHTML = `<img src="${esc(r.icon ? img(r.icon, 40) : face(r.mint, r.symbol))}" data-ph="${face(r.mint, r.symbol)}" alt="" onerror="__imgfb(this)"><b>$${esc(r.symbol || '?')}</b><span>${usd(mcapOf(r))}</span>`;
     el.prepend(b); while (el.children.length > 14) el.lastChild.remove();
   }
-  function tapeIcon(r) { const b = document.querySelector(`#ltP [data-mint="${r.mint}"] img`); if (b && r.icon) { b.src = img(r.icon, 40); b.style.visibility = ''; } }
+  function tapeIcon(r) { const b = document.querySelector(`#ltP [data-mint="${r.mint}"] img`); if (b && r.icon) { delete b.dataset.fb; delete b.dataset.orig; b.onerror = () => __imgfb(b); b.src = img(r.icon, 40); b.style.visibility = ''; } }
   function tapeNote(html) { const el = $('#ltP'); if (!el) return; const b = document.createElement('span'); b.className = 'lt-p1 note'; b.innerHTML = html; el.prepend(b); while (el.children.length > 14) el.lastChild.remove(); }
 
   // ================================================================ the market pane's tabs
