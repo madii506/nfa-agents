@@ -5,7 +5,8 @@ const L = require('./_lib');
 const ME = 'https://api-mainnet.magiceden.dev/v2';
 const symOk = s => typeof s === 'string' && /^[a-z0-9][a-z0-9_\-]{1,63}$/i.test(s);
 const lam = v => (v == null || !isFinite(Number(v)) ? null : Number(v) / 1e9);
-// [symbol, name, a picture from one of its NFTs for the board]
+// [symbol, name, a picture we know loads] — the board. Symbols Magic Eden doesn't know drop out on their own; pictures
+// are checked before they're stored, and the ones left blank are filled from the collection's own listings.
 const WATCH = [
   ['mad_lads', 'Mad Lads', 'https://madlads.s3.us-west-2.amazonaws.com/images/8376.png'],
   ['solana_monkey_business', 'Solana Monkey Business', 'https://arweave.net/GCqW0ZszLZMCohvYunRQ0yIrJUAY31SEvW4W7TOwl0o'],
@@ -14,7 +15,7 @@ const WATCH = [
   ['famous_fox_federation', 'Famous Fox Federation', 'https://famousfoxes.com/hd/9791.png'],
   ['okay_bears', 'Okay Bears', 'https://arweave.net/8s9YTtgompdqQzjwOBQ0KHK3_O3eMcpmJxOZ319jd5g'],
   ['collector_crypt', 'Collector Crypt', 'https://arweave.net/TTG7dbTOlV7qGF7uMfcuVOyaJIqUl9WdmBjHPAKhE58'],
-  ['retardio_cousins', 'Retardio Cousins', 'https://d2nci21ylekf89.cloudfront.net/DUX8SZXLKigc84BBUcYjA7PuKe2SFwXFtQVgwmBsaXKm/1/761fe73c0a1e052af7fef4f034fa3d194d114f22ac27c7f3024d1537f9e63d55.png'],
+  ['retardio_cousins', 'Retardio Cousins', null],
   ['smb_gen3', 'SMB Gen3', 'https://gateway.irys.xyz/2WjGRXN2PoxVifDH4L3d6xUbmxWBP2rzhdhFCFy9bY2H'],
   ['tensorians', 'Tensorians', 'https://prod-tensor-creators-s3.s3.us-east-1.amazonaws.com/drop-metadata/24f27171-430f-42ca-b442-6a75a8daadad/images/2789.png'],
   ['aurory', 'Aurory', 'https://aurorians.cdn.aurory.io/aurorians-v2/current/images/full/4130.png'],
@@ -23,7 +24,22 @@ const WATCH = [
   ['sensei', 'Sensei', 'https://sensei.launchifi.xyz/gif/2256.gif'],
   ['froganas', 'Froganas', 'https://arweave.net/_xqWgP1gSJuqA7uHY5is-SPwO0Uaoh-IQOdJ-gUCqls?ext=png'],
   ['portals', 'Portals', 'https://arweave.net/JPmNtGEUildq45Xhn1RO6XTMbTlaBhTap03za_rbMAY'],
-  ['lifinity_flares', 'Lifinity Flares', 'https://www.arweave.net/c9gKlsJaSOYtNLaKhcRor4E9If-nk08X7ALKx-PWSuA?ext=webp']];
+  ['lifinity_flares', 'Lifinity Flares', 'https://www.arweave.net/c9gKlsJaSOYtNLaKhcRor4E9If-nk08X7ALKx-PWSuA?ext=webp'],
+  ...[
+    ['degenerate_ape_academy', 'Degenerate Ape Academy'], ['boryoku_dragonz', 'Boryoku Dragonz'], ['transdimensional_fox_federation', 'Transdimensional Fox Federation'],
+    ['galactic_geckos', 'Galactic Geckos'], ['galactic_gecko_space_garage', 'Galactic Gecko Space Garage'], ['the_catalina_whale_mixer', 'The Catalina Whale Mixer'], ['thugbirdz', 'Thugbirdz'],
+    ['shadowy_super_coder_dao', 'Shadowy Super Coder'], ['cyber_frogs', 'Cyber Frogs'], ['trippin_ape_tribe', 'Trippin Ape Tribe'], ['pesky_penguins', 'Pesky Penguins'],
+    ['stoned_ape_crew', 'Stoned Ape Crew'], ['primates', 'Primates'], ['astrals', 'Astrals'], ['kanpai_pandas', 'Kanpai Pandas'], ['quekz', 'Quekz'], ['ovols', 'Ovols'],
+    ['blocksmith_labs', 'Blocksmith Labs'], ['jelly_rascals', 'Jelly Rascals'], ['bodoggos', 'Bodoggos'], ['solgods', 'SolGods'], ['duelbots', 'DuelBots'],
+    ['rogue_sharks', 'Rogue Sharks'], ['taiyo_robotics', 'Taiyo Robotics'], ['abc_abracadabra', 'ABC'], ['saga_monkes', 'Saga Monkes'], ['monkey_baby_business', 'Monkey Baby Business'],
+    ['genopets_habitats', 'Genopets Habitats'], ['lily', 'Lily'], ['communi3_mad_scientists', 'Communi3: Mad Scientists'], ['the_heist', 'The Heist'], ['honeyland_passes', 'Honeyland'],
+    ['nyan_heroes', 'Nyan Heroes'], ['sol_slugs', 'Sol Slugs'], ['solana_mfers', 'Solana Mfers'], ['naked_meerkats', 'Naked Meerkats'], ['meerkat_millionaires_country_club', 'Meerkat Millionaires'],
+    ['the_suites', 'The Suites'], ['dead_kings', 'Dead Kings'], ['bonkz', 'Bonkz'], ['great_goats', 'Great Goats'], ['photo_finish_pff', 'Photo Finish'], ['chimpions', 'Chimpions'],
+    ['lux_world', 'Lux World'], ['atadians', 'Atadians'], ['solcasino_io', 'SolCasino'], ['the_remnants_', 'The Remnants'], ['frogana', 'Frogana'], ['vandals', 'Vandals'],
+    ['y00ts', 'y00ts'], ['claynosaurz_popkins', 'Popkins'], ['nokiamon', 'Nokiamon'], ['bitbots', 'BitBots'], ['madlads_ow', 'Mad Lads OW'], ['goblins', 'Goblins'],
+    ['solana_bears', 'Solana Bears'], ['sol_bears', 'Sol Bears'], ['zeta_wizards', 'Zeta Wizards'], ['marinade_chefs', 'Marinade Chefs'], ['drippies', 'Drippies'], ['bozo_collective', 'Bozo Collective'],
+    ['the_lowlifes', 'The Lowlifes'], ['player_2', 'Player 2'], ['solana_money_boys', 'Solana Money Boys'], ['bitmatrix', 'Bitmatrix'], ['the_infected_mob', 'The Infected Mob'], ['gothic_degens', 'Gothic Degens'],
+  ].map(([c, n]) => [c, n, null])];
 
 async function me(path, ttl) {
   return L.remember('me:' + path, ttl, async () => {
@@ -68,24 +84,66 @@ function pickFrom(floor, ls) {
   return { band: null, cands: all.slice(0, 8), pick: null, why: 'nothing rare is listed near the floor right now' };
 }
 
+
+// a picture that actually loads: an image content type and a 200 or 206, inside a few seconds
+async function loads(url) {
+  if (!url || !/^https:\/\//.test(url) || L.MOCK) return !!url && !L.MOCK ? false : !!url;
+  try { const r = await fetch(url, { headers: { range: 'bytes=0-2047', 'user-agent': L.UA }, signal: AbortSignal.timeout(5000) }); try { r.body && r.body.cancel && await r.body.cancel(); } catch {} return (r.status === 200 || r.status === 206) && /^image\//.test(r.headers.get('content-type') || ''); }
+  catch { return false; }
+}
+async function pictureFor(c, given) {
+  const tries = [];
+  if (given) tries.push(given);
+  const info = await me(`/collections/${c}`, 86400000).catch(() => null);
+  if (info && info.image) tries.push(info.image);
+  for (const u of tries) if (await loads(u)) return { image: u, name: info && info.name };
+  const ls = await listings(c).catch(() => []);
+  for (const l of ls.slice(0, 4)) if (l.img && await loads(l.img)) return { image: l.img, name: info && info.name };
+  return { image: null, name: info && info.name };
+}
+const rowOut = r => ({ c: r.symbol, name: r.name, image: r.image, floor: r.floor, listed: r.listed, avg24: r.avg24, vol7: r.vol7 });
+async function boardDb() {
+  await L.ready();
+  const rows = await L.q('SELECT * FROM nfa_colls');
+  const by = new Map(rows.map(r => [r.symbol, r])), now = Date.now(), age = r => now - Date.parse(r.updated_at);
+  const due = WATCH.map(([c, name, img], i) => ({ c, name, img, i, r: by.get(c) }))
+    .filter(x => !x.r || (x.r.ok ? age(x.r) > 10 * 60e3 : age(x.r) > 24 * 3600e3))
+    .sort((a, b) => (a.r ? 1 : 0) - (b.r ? 1 : 0) || (a.r && b.r ? age(b.r) - age(a.r) : a.i - b.i)).slice(0, 8);
+  await L.pool(due, 2, async x => {
+    try {
+      const s = await me(`/collections/${x.c}/stats`, 120000);
+      if (!s || s.floorPrice == null) throw Object.assign(new Error('empty'), { code: 404 });
+      let name = (x.r && x.r.name) || x.name || x.c, image = x.r && x.r.image;
+      if (!image || !x.r || !x.r.img_at) { const p = await pictureFor(x.c, x.img); image = p.image; if (p.name) name = L.clean(p.name, 64); }
+      await L.q(`INSERT INTO nfa_colls (symbol, name, image, floor, listed, avg24, vol7, ok, img_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,true,now(),now())
+        ON CONFLICT (symbol) DO UPDATE SET name=EXCLUDED.name, image=EXCLUDED.image, floor=EXCLUDED.floor, listed=EXCLUDED.listed, avg24=EXCLUDED.avg24, vol7=EXCLUDED.vol7, ok=true, img_at=COALESCE(nfa_colls.img_at, now()), updated_at=now()`,
+        [x.c, name, image, lam(s.floorPrice), s.listedCount ?? null, lam(s.avgPrice24hr), lam(s.volume7d)]);
+    } catch (e) {
+      if (e.code === 404) await L.q(`INSERT INTO nfa_colls (symbol, ok, updated_at) VALUES ($1,false,now()) ON CONFLICT (symbol) DO UPDATE SET ok=false, updated_at=now()`, [x.c]).catch(() => {});
+    }
+  });
+  const fresh = await L.q('SELECT * FROM nfa_colls WHERE ok AND floor IS NOT NULL');
+  const keep = new Set(WATCH.map(w => w[0]));
+  return fresh.filter(r => keep.has(r.symbol)).map(rowOut).sort((a, b) => (b.vol7 || 0) - (a.vol7 || 0));
+}
+async function boardMem() {
+  return L.remember('watch', 600000, async () => {
+    const out = WATCH.slice(0, 24).map(([c, name, image]) => ({ c, name, image, floor: null, listed: null, avg24: null, vol7: null }));
+    await L.pool(out, 2, async o => { try { const s = await me(`/collections/${o.c}/stats`, 300000); Object.assign(o, { floor: lam(s.floorPrice), listed: s.listedCount ?? null, avg24: lam(s.avgPrice24hr), vol7: lam(s.volume7d) }); } catch {} });
+    return out.filter(o => o.floor != null).sort((a, b) => (b.vol7 || 0) - (a.vol7 || 0));
+  });
+}
+
 module.exports = async (req, res) => {
   const qy = L.query(req), op = String(qy.op || ''), c = String(qy.c || '').trim().toLowerCase();
   if (L.limited('me:' + L.ip(req), 90, 60000)) return L.send(res, 200, { ok: false, error: 'Too many requests. Wait a minute.' });
   try {
     if (op === 'popular') {
-      // Magic Eden's trending endpoint went quiet, so the market board is a watchlist of major Solana collections,
-      // each read live and sorted by seven-day volume.
-      const list = await L.remember('watch', 600000, async () => {
-        const out = WATCH.map(([c, name, image]) => ({ c, name, image, floor: null, listed: null, avg24: null, vol7: null }));
-        await L.pool(out, 2, async o => {
-          const s = await me(`/collections/${o.c}/stats`, 300000);
-          Object.assign(o, { floor: lam(s.floorPrice), listed: s.listedCount ?? null, avg24: lam(s.avgPrice24hr), vol7: lam(s.volume7d) });
-        });
-        const good = out.filter(o => o.floor != null);
-        if (!good.length) throw new Error('Magic Eden didn’t answer.');
-        return good.sort((a, b) => (b.vol7 || 0) - (a.vol7 || 0));
-      });
-      return L.send(res, 200, { ok: true, at: Date.now(), basis: 'watchlist · 7-day volume', list }, L.CACHE(120));
+      // Magic Eden's trending endpoint went quiet, so the board is a long watchlist of Solana collections, each read
+      // live and sorted by seven-day volume. With the database, ten are refreshed per call and the rest come from the last read.
+      const list = L.dbReady() ? await boardDb() : await boardMem();
+      if (!list.length) throw new Error('Magic Eden didn’t answer.');
+      return L.send(res, 200, { ok: true, at: Date.now(), basis: 'watchlist · 7-day volume', list }, L.CACHE(90));
     }
     if (!symOk(c)) return L.send(res, 200, { ok: false, error: 'Give a collection symbol, like mad_lads.' });
     if (op === 'stats') return L.send(res, 200, { ok: true, ...(await stats(c)) }, L.CACHE(45));
