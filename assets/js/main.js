@@ -30,7 +30,7 @@ function webgl() { try { const c = document.createElement('canvas'); return !!(c
 async function boot() {
   const p = v => load.style.setProperty('--p', v + '%');
   p(12);
-  if (q.has('term') || !webgl()) { load.classList.add('done'); return enter('skip'); }
+  if (q.has('term') || q.has('coin') || q.has('launch') || q.has('pair') || !webgl()) { load.classList.add('done'); return enter('skip'); }
   const listed = fetch('/api/coin?list=1').then(r => r.ok ? r.json() : null).then(j => (j && j.coins) || []).catch(() => []);
   const [hallMod] = await Promise.all([import('./hall.js').then(m => { p(70); return m; }), Promise.race([listed.then(c => { coins = c; }), new Promise(r => setTimeout(r, 1800))])]);
   p(88);

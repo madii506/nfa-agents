@@ -1,6 +1,7 @@
 // nfa terminal: a shell with history, completion and clickable output; an agent pane that reads the market; a
 // market pane; docs you can cat. Commands live in modules: market.js (magic eden), launch.js (pump.fun, wallets).
 import * as PX from './px.js';
+import { installUX } from './ux.js';
 const $ = s => document.querySelector(s);
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -150,7 +151,7 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
   const app = $('#app'), alog = $('#alog'), faceEl = $('#face'), astat = $('#astat');
   const cmds = new Map(), alias = new Map();
   const hist = (() => { try { return JSON.parse(store.get('nfa:hist') || '[]'); } catch { return []; } })();
-  let hi = hist.length, busy = false, ask = null, abort = null, fast = false, pinned = true;
+  let hi = hist.length, busy = false, ask = null, abort = null, fast = false, pinned = true, lastAborted = false;
   const t0 = Date.now();
 
   if (store.get('nfa:theme') === 'dark') app.classList.add('dark');
@@ -189,9 +190,26 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
   const bar = (p, w = 24) => { const n = Math.round(Math.max(0, Math.min(1, p)) * w); return '█'.repeat(n) + '░'.repeat(w - n); };
 
   // ---- input line: a hidden input mirrored into the prompt
+  const sug = document.createElement('ul'); sug.className = 'sug'; sug.hidden = true; $('#shell').appendChild(sug);
+  let sugItems = [], sugSel = -1;
+  function suggest() {
+    const v = input.value;
+    if (ask || !v.trim() || busy) { sugItems = []; }
+    else {
+      const parts = v.split(/\s+/);
+      if (parts.length <= 1) { const q = v.toLowerCase(); sugItems = [...cmds.keys()].filter(n => !cmds.get(n).hidden && n.startsWith(q)).sort((a, b) => a.length - b.length).slice(0, 6).map(n => ({ fill: n, label: n, sub: cmds.get(n).desc || '' })); if (sugItems.length === 1 && sugItems[0].fill === q) sugItems = []; }
+      else { const c = cmds.get(resolve(parts[0].toLowerCase())), last = parts[parts.length - 1].toLowerCase(); const cands = c && c.complete ? (c.complete(parts.slice(1), last) || []) : []; sugItems = cands.filter(x => x.toLowerCase().startsWith(last) && x.toLowerCase() !== last).slice(0, 7).map(x => ({ fill: parts.slice(0, -1).join(' ') + ' ' + x, label: x, sub: (T.market && T.market.nameOf && T.market.nameOf(x)) || '' })); }
+    }
+    if (!sugItems.length) { sug.hidden = true; sugSel = -1; return; }
+    sugSel = Math.min(sugSel, sugItems.length - 1);
+    sug.innerHTML = sugItems.map((x, i) => `<li class="${i === sugSel ? 'on' : ''}" data-i="${i}"><b>${esc(x.label)}</b><span>${esc(x.sub)}</span></li>`).join('');
+    sug.hidden = false;
+  }
+  sug.addEventListener('pointerdown', e => { const li = e.target.closest('li'); if (!li) return; e.preventDefault(); const x = sugItems[+li.dataset.i]; input.value = x.fill + ' '; render(); input.focus(); if (!cmds.get(x.fill) || !(cmds.get(x.fill).usage || '').includes('<')) { const v = input.value.trim(); input.value = ''; render(); run(v); } });
   function render() {
     const v = input.value, c = input.selectionStart ?? v.length;
     typed.textContent = v.slice(0, c); after.textContent = v.slice(c);
+    suggest();
     let g = '';
     if (!ask && c === v.length && v && !v.includes(' ')) { const m = [...cmds.keys()].filter(n => !cmds.get(n).hidden && n.startsWith(v.toLowerCase())).sort((a, b) => a.length - b.length)[0]; if (m && m !== v) g = m.slice(v.length); }
     else if (ask && ask.hint && !v) g = ask.hint;
@@ -235,10 +253,13 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
       e.preventDefault(); const v = input.value; input.value = ''; render();
       if (ask) { const a = ask; ask = null; print(`<span class="dim">${esc(a.label)} ›</span> ${esc(a.secret ? '•'.repeat(v.length) : v)}`); setPrompt(); a.resolve(v); return; }
       if (busy) { fast = true; return; }
+      if (sugSel >= 0 && sugItems[sugSel]) { const f = sugItems[sugSel].fill; sugSel = -1; run(f); return; }
       run(v); return;
     }
     if (e.key === 'Tab') { e.preventDefault(); if (ghost.textContent && !ask) { input.value += ghost.textContent; render(); } else if (!ask) complete(); return; }
     if (e.key === 'ArrowRight' && ghost.textContent && input.selectionStart === input.value.length && !ask) { e.preventDefault(); input.value += ghost.textContent; render(); return; }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !sug.hidden && input.value.trim()) { e.preventDefault(); sugSel = e.key === 'ArrowDown' ? Math.min(sugItems.length - 1, sugSel + 1) : Math.max(-1, sugSel - 1); suggest(); return; }
+    if (e.key === 'Tab' && !sug.hidden && sugSel >= 0) { e.preventDefault(); input.value = sugItems[sugSel].fill + ' '; sugSel = -1; render(); return; }
     if (e.key === 'ArrowUp' && !ask) { e.preventDefault(); if (hi > 0) { hi--; input.value = hist[hi] || ''; requestAnimationFrame(() => { input.setSelectionRange(input.value.length, input.value.length); render(); }); } return; }
     if (e.key === 'ArrowDown' && !ask) { e.preventDefault(); if (hi < hist.length) { hi++; input.value = hist[hi] || ''; render(); } return; }
     if (e.key === 'Escape') { e.preventDefault(); if (ask) { const a = ask; ask = null; print('<span class="dim">cancelled.</span>'); setPrompt(); a.resolve(null); } else { input.value = ''; render(); } return; }
@@ -281,19 +302,26 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
     if (busy) { abort && abort.abort(); }
     busy = true; fast = false; abort = new AbortController(); setPrompt();
     try { await c.run(args, { signal: abort.signal, line }); }
-    catch (e) { if (e && e.name === 'AbortError') {} else { print(`<span class="red">✗</span> ${esc((e && e.message) || e)}`); console.warn(e); } }
-    finally { busy = false; abort = null; fast = false; setPrompt(); }
+    catch (e) { if (e && e.name === 'AbortError') {} else { print(`<span class="red">✗</span> ${esc((e && e.message) || e)}`); console.warn(e); T.blink && T.blink(3); } }
+    finally { lastAborted = !!(abort && abort.signal.aborted); busy = false; abort = null; fast = false; setPrompt(); }
   }
   function tabsOn(line) { document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', line.split(' ')[0] === b.dataset.run.split(' ')[0])); }
   document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { sound && sound.sfx('open'); run(b.dataset.run); }));
 
   function reg(name, def) { cmds.set(name, def); (def.alias || []).forEach(a => alias.set(a, name)); }
+  async function typeRun(line, signal) {          // types a command into the prompt, key by key, then runs it
+    input.value = ''; render();
+    for (const ch of line) { if (signal && signal.aborted) return; input.value += ch; render(); sound && sound.sfx('key'); await sleep(reduce ? 0 : 38 + Math.random() * 40); }
+    await sleep(reduce ? 0 : 260); const v = input.value; input.value = ''; render();
+    const saved = abort; busy = false; await run(v); abort = saved; busy = true; setPrompt();
+    if (lastAborted && saved) saved.abort();
+  }
 
   // ---- shared context for the command modules
   let charW = 0;
   const cols = () => { if (!charW) { const m = document.createElement('span'); m.textContent = '0000000000'; m.style.cssText = 'position:absolute;visibility:hidden;white-space:pre'; out.appendChild(m); charW = m.getBoundingClientRect().width / 10 || 8.4; m.remove(); } return Math.max(30, Math.floor((out.clientWidth - 36) / charW)); };
   addEventListener('resize', () => { charW = 0; });
-  const T = { print, node, text, type, lines, spinner, bar, k, links, esc, sleep, ask: askFor, run, reg, sound, mobile, store, face, PX, cmds, coins: initialCoins, cols,
+  const T = { print, node, text, type, lines, spinner, bar, k, links, esc, sleep, ask: askFor, run, reg, sound, mobile, store, face, PX, cmds, coins: initialCoins, cols, typeRun,
     status, agentLog, agentState, agentStat, api, uptime: () => Date.now() - t0 };
   window.__term = T;
 
@@ -315,15 +343,18 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
   function agentState(s) { $('#agentState').textContent = s; }
   const stats = { state: 'starting', seen: '—', last: '—' };
   function agentStat(key, val) { stats[key] = val; astat.innerHTML = Object.entries(stats).map(([a, b]) => `<div>${esc(a.padEnd(8))}<b>${b}</b></div>`).join(''); }
-  function agentLog(html) { const d = document.createElement('div'); d.innerHTML = html; alog.appendChild(d); while (alog.children.length > 14) alog.firstChild.remove(); }
-  let look = 0, lookT = 0;
+  function agentLog(html) { const d = document.createElement('div'); d.innerHTML = html; alog.appendChild(d); while (alog.children.length > 14) alog.firstChild.remove();
+    const m = $('#sMid'); if (m) { const t = document.createElement('span'); t.className = 'tick'; t.innerHTML = html; m.innerHTML = ''; m.appendChild(t); } }
+  let look = 0, lookT = 0, mouseLook = 0;
   T.look = v => { look = v; lookT = Date.now(); };
+  addEventListener('pointermove', e => { const r = faceEl.getBoundingClientRect(); if (!r.width) return; mouseLook = Math.max(-1, Math.min(1, Math.round((e.clientX - (r.left + r.width / 2)) / 260))); }, { passive: true });
+  T.blink = (n = 2) => { let i = 0; const f = () => { faceEl.textContent = face({ blink: true, look }); setTimeout(() => { faceEl.textContent = face({ look }); if (++i < n) setTimeout(f, 120); }, 110); }; f(); };
   (function blink() {
-    const now = Date.now(); if (now - lookT > 2500 && look) look = 0;
+    const now = Date.now(); if (now - lookT > 2500) look = mouseLook;
     faceEl.textContent = face({ look });
     setTimeout(() => { faceEl.textContent = face({ blink: true, look }); setTimeout(() => { faceEl.textContent = face({ look }); setTimeout(blink, 2200 + Math.random() * 3200); }, 140); }, 10);
   })();
-  setInterval(() => { faceEl.textContent = face({ look }); }, 400);
+  setInterval(() => { if (Date.now() - lookT > 2500) look = mouseLook; faceEl.textContent = face({ look }); }, 120);
   const clock = $('#clock'); const tick = () => { const d = new Date(); clock.textContent = d.toTimeString().slice(0, 8); agentStat('uptime', fmtUp(Date.now() - t0)); }; tick(); setInterval(tick, 1000);
   function fmtUp(ms) { const s = Math.floor(ms / 1000); return [s / 3600, s / 60 % 60, s % 60].map(v => String(Math.floor(v)).padStart(2, '0')).join(':'); }
 
@@ -338,7 +369,7 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
   const GROUPS = [
     ['market', 'live magic eden data', ['top', 'scan', 'pick', 'view', 'floor', 'watch', 'info']],
     ['launch', 'coins paired with collections', ['launch', 'coins', 'coin', 'feed', 'receipts', 'connect', 'wallet']],
-    ['agent', 'the agent and the draw', ['agent', 'draw', 'neofetch', 'how']],
+    ['agent', 'the agent and the draw', ['agent', 'stats', 'compare', 'draw', 'neofetch', 'how', 'tour']],
     ['docs', 'read how it works', ['ls', 'cat', 'tree', 'about']],
     ['shell', 'the rest', ['clear', 'history', 'theme', 'sound', 'rain', 'date', 'whoami', 'echo', 'hall']],
   ];
@@ -461,6 +492,52 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
         ['seen', s ? `${s.seen} collections this session` : '—'], ['last', s && s.last ? s.last : '—'], ['buys', T.coins.length ? 'from each coin’s vault · ' + k('receipts') : `none yet: no coin is live. ${k('launch')}`]];
       for (let i = 0; i < 7; i++) { const [a, b] = info[i] || ['', '']; print(`<span class="hi">${esc((f[i] || '').padEnd(16))}</span>  ${a ? `<b>${esc(a.padEnd(7))}</b>` : ''}${b}`, 'tight'); }
     } });
+  reg('tour', { desc: 'a guided run through nfa, typed for you. ctrl+c stops', alias: ['demo', 'guide'],
+    async run(a, { signal }) {
+      const first = (T.market && T.market.first()) || 'mad_lads';
+      const steps = [['', 'a 60-second tour. watch the prompt; ctrl+c stops it.'], ['how', 'first, the loop: a coin, its fees, an agent, NFTs.'], ['top', 'the market the agents read, live from magic eden.'], ['pick ' + first, 'the agent’s rule, run live on the busiest collection.'], ['neofetch', 'this system at a glance.'], ['', `your turn: ${k('launch')} a coin, or ${k('help')} for everything.`]];
+      for (const [cmd, note] of steps) {
+        if (signal.aborted) return;
+        print(`<span class="tag">tour</span> ${note.includes('<') ? note : esc(note)}`); await sleep(reduce ? 0 : 900);
+        if (cmd) { await typeRun(cmd, signal); await sleep(reduce ? 0 : 1600); }
+      }
+    } });
+  reg('stats', { desc: 'a live dashboard: market, agent, coins', alias: ['dash', 'dashboard'],
+    async run(a, { signal }) {
+      const list = (T.market && T.market.list && T.market.list()) || [], sm = T.market && T.market.summary ? T.market.summary() : { seen: 0 };
+      const cells = [['collections watched', list.length], ['read this session', sm.seen || 0], ['coins live', T.coins.length], ['receipts', T.receiptsCount || 0]];
+      const row = document.createElement('div'); row.className = 'statrow';
+      row.innerHTML = cells.map(([l, v]) => `<div><b data-v="${v}">0</b><span>${esc(l)}</span></div>`).join(''); node(row);
+      row.querySelectorAll('b').forEach(b => { const v = +b.dataset.v, t0 = performance.now(); const f = t => { const p = Math.min(1, (t - t0) / 900); b.textContent = Math.round(v * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      if (!list.length) { print('<span class="dim">the market hasn’t loaded yet. try again in a moment.</span>'); return; }
+      print('<b>floor, by collection</b> <span class="dim">· ◎, log scale · live from magic eden</span>');
+      const top = list.slice(0, T.mobile ? 8 : 12), W = Math.max(10, Math.min(36, T.cols() - 34)), lg = v => Math.log10(Math.max(.001, v) * 1000);
+      const mx = Math.max(...top.map(p => lg(p.floor || 0)));
+      for (const p of top) {
+        const el = print(`<span class="row hbar" data-cmd="pick ${esc(p.c)}"><span class="hn">${esc(p.name.slice(0, 22))}</span><span class="ht"><i></i></span><span class="hv">${(p.floor != null ? p.floor.toFixed(p.floor >= 1 ? 2 : 3) : '—')}</span></span>`, 'tight');
+        const w = Math.max(2, lg(p.floor || 0) / mx * 100); requestAnimationFrame(() => requestAnimationFrame(() => { el.querySelector('.ht i').style.width = w.toFixed(1) + '%'; }));
+        if (!reduce) await sleep(45);
+      }
+      print('<span class="dim">click a bar for the agent’s pick in that collection</span>');
+    } });
+  reg('compare', { desc: 'two collections side by side', usage: 'compare <a> <b>', complete: () => (T.market && T.market.symbols && T.market.symbols()) || [], alias: ['vs'],
+    async run(a, { signal }) {
+      const sy = (T.market && T.market.symbols && T.market.symbols()) || [];
+      const x = (a[0] || sy[0] || '').toLowerCase(), y = (a[1] || sy[1] || '').toLowerCase();
+      if (!x || !y) return print('<span class="dim">compare two collections, like</span> ' + k('compare mad_lads okay_bears'));
+      const s = spinner(`reading ${x} and ${y}`);
+      const [A, B] = await Promise.all([api('/api/me?op=pick&c=' + encodeURIComponent(x), { signal, timeout: 20000 }), api('/api/me?op=pick&c=' + encodeURIComponent(y), { signal, timeout: 20000 })]);
+      if (!A.ok || !B.ok) return s.fail(esc((!A.ok ? A : B).error));
+      s.done(`<b>${esc(A.name)}</b> <span class="dim">vs</span> <b>${esc(B.name)}</b>`);
+      const f = v => v == null ? '—' : v >= 100 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toFixed(3);
+      const rows = [['floor ◎', f(A.floor), f(B.floor)], ['listed', A.listed ?? '—', B.listed ?? '—'], ['24h avg ◎', f(A.avg24), f(B.avg24)], ['7d volume ◎', f(A.vol7), f(B.vol7)], ['agent pick', A.pick ? 'rank ' + A.pick.rank : '—', B.pick ? 'rank ' + B.pick.rank : '—'], ['pick price ◎', A.pick ? f(A.pick.price) : '—', B.pick ? f(B.pick.price) : '—']];
+      const w = Math.max(10, Math.min(22, Math.floor((T.cols() - 14) / 2)));
+      print(`<span class="hdr">${''.padEnd(14)}${A.name.slice(0, w - 1).padEnd(w)}${B.name.slice(0, w - 1).padEnd(w)}</span>`);
+      for (const [l, p, q] of rows) { print(`${esc(l.padEnd(14))}${esc(String(p).padEnd(w))}${esc(String(q).padEnd(w))}`, 'tight'); if (!reduce) await sleep(40); }
+      print(`${k('pick ' + A.c, 'pick in ' + A.c)}   ${k('pick ' + B.c, 'pick in ' + B.c)}`);
+    } });
+  reg('faq', { desc: 'common questions', run: () => run('cat faq.md', { echo: false }) });
+
   // ca / x / buy / chart only exist once they are set
   const C = window.NFA || {};
   if (C.ca) {
@@ -493,7 +570,7 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
 
   // ================================================================ modules, then the boot
   setPrompt();
-  const mods = Promise.all([import('./market.js').then(m => m.install(T)).catch(e => console.warn('market', e)), import('./launch.js').then(m => m.install(T)).catch(e => console.warn('launch', e))]);
+  const mods = Promise.all([import('./market.js').then(m => m.install(T)).catch(e => console.warn('market', e)), import('./launch.js').then(m => m.install(T)).catch(e => console.warn('launch', e)), import('./live.js').then(m => m.install(T)).catch(e => console.warn('live', e))]);
   (async function boot() {
     status('agent starting', 'busy');
     const L = [
@@ -509,10 +586,15 @@ export function start({ sound, from, coins: initialCoins = [], mobile }) {
     print(`<span class="ascii big">${banner()}</span>`);
     print('');
     await type('launch a coin paired with an NFT collection. its agent spends the fees on NFTs for holders, or for the burn.', 'hi', 1400);
-    print(`<span class="dim">try</span>  ${k('help')}  ${k('how')}  ${k('top')}  ${k('launch')}  ${k('neofetch')}  <span class="dim">· or just type</span>`);
+    print(`<span class="dim">try</span>  ${k('tour')}  ${k('help')}  ${k('top')}  ${k('launch')}  ${k('stats')}  <span class="dim">· ${mobile ? 'or just type' : 'ctrl+k searches everything'}</span>`);
     print('');
     await mods;
+    try { installUX(T); } catch (e) { console.warn('ux', e); }
     T.ready = true;
+    // links into the site: ?coin=<mint> opens a coin, ?launch (or ?pair=<collection>) opens the launch studio
+    { const u = new URLSearchParams(location.search), c = u.get('coin'), pr = u.get('pair');
+      if (c && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(c)) run(T.coins.some(x => x.mint === c) ? 'coin ' + c : 'pump ' + c);
+      else if (u.has('launch') || pr) run('launch' + (pr && /^[a-z0-9_\-]{2,64}$/i.test(pr) ? ' ' + pr : '')); }
     if (!mobile) input.focus({ preventScroll: true });
     if (sound) sound.sfx('ok');
   })();

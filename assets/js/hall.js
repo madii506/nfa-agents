@@ -88,6 +88,13 @@ class Screen {
   }
 }
 
+// a rounded rectangle as flat geometry, centred on its origin
+function pill(w, h, r) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return new THREE.ShapeGeometry(s, 6);
+}
 // ---------------------------------------------------------------- the hall
 function build(scene, mobile) {
   const std = o => new THREE.MeshStandardMaterial(o);
@@ -126,10 +133,10 @@ function build(scene, mobile) {
   body.castShadow = !mobile; body.receiveShadow = !mobile; scene.add(body);
   const doorGeo = new THREE.PlaneGeometry(RW - .05, RH - .07);
   const doorsBy = [[], [], []]; racks.forEach((r, i) => doorsBy[i % 3].push(r));
-  doorsBy.forEach((list, v) => {
+  const doors = doorsBy.map((list, v) => {
     const m = new THREE.InstancedMesh(doorGeo, doorMats[v], list.length);
     list.forEach((r, i) => { dummy.position.set(r.face - r.side * .004, RH / 2, r.z); dummy.rotation.set(0, -r.side * Math.PI / 2, 0); dummy.updateMatrix(); m.setMatrixAt(i, dummy.matrix); });
-    m.receiveShadow = !mobile; scene.add(m);
+    m.receiveShadow = !mobile; scene.add(m); return { mesh: m, list };
   });
   // plinths: a black kick strip along the base of every rack row
   for (const side of [-1, 1]) for (let row = 0; row < 3; row++) {
@@ -234,6 +241,9 @@ function build(scene, mobile) {
   const wallC = document.createElement('canvas'); wallC.width = 2048; wallC.height = 640; const wallT = new THREE.CanvasTexture(wallC); wallT.colorSpace = THREE.SRGBColorSpace;
   add(new THREE.BoxGeometry(6.7, 2.25, .12), std({ color: 0x16181b, roughness: .5 }), 0, 2.78, -44.86);
   add(new THREE.PlaneGeometry(6.4, 2.0), new THREE.MeshBasicMaterial({ map: wallT, toneMapped: false }), 0, 2.78, -44.79);
+  const ink = new THREE.MeshBasicMaterial({ color: 0x0b0c0e });
+  const wallEyes = [-1, 1].map(sx => add(pill(.158, .374, .079), ink, sx * .165, 2.78 + .014, -44.784));
+  const wallDot = add(new THREE.CircleGeometry(.03, 16), ink, -2.94 + .03, 2.78 + .48, -44.784);
   const desk = new THREE.Group(); desk.position.set(0, 0, -43.0); scene.add(desk);
   const deskMat = std({ color: 0xf4f5f7, roughness: .4, metalness: .02 }), topMat = std({ color: 0xffffff, roughness: .25, metalness: .02 });
   for (let i = -4; i <= 4; i++) {
@@ -261,8 +271,19 @@ function build(scene, mobile) {
   // the agent: a white cube wearing the mark, a thin black ring under it
   const faceC = document.createElement('canvas'); faceC.width = faceC.height = 256; const faceT = new THREE.CanvasTexture(faceC); faceT.colorSpace = THREE.SRGBColorSpace;
   const agent = new THREE.Group(); scene.add(agent);
-  const shell = add(new RoundedBoxGeometry(.42, .42, .42, 5, .085), std({ color: 0xffffff, roughness: .38, metalness: .02 }), 0, 0, 0, agent, true);
+  const shell = add(new RoundedBoxGeometry(.42, .42, .42, 5, .085), std({ color: 0xffffff, roughness: .38, metalness: .02 }), 0, 0, 0, agent);
   add(new THREE.PlaneGeometry(.33, .33), std({ map: faceT, transparent: true, roughness: .4 }), 0, 0, .2105, agent);
+  const faceEyes = [-1, 1].map(sx => add(pill(.034, .0804, .017), ink, sx * .0356, .0031, .2118, agent));
+  const blobT = tex(128, 128, (g, w, h) => { const r = g.createRadialGradient(64, 64, 4, 64, 64, 62); r.addColorStop(0, 'rgba(30,34,40,.42)'); r.addColorStop(1, 'rgba(30,34,40,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
+  const blob = add(new THREE.PlaneGeometry(.9, .9), new THREE.MeshBasicMaterial({ map: blobT, transparent: true, depthWrite: false }), 0, .006, 0); blob.rotation.x = -Math.PI / 2;
+  // dust in the air, drifting through the light
+  const DN = mobile ? 260 : 700, dp = new Float32Array(DN * 3);
+  for (let i = 0; i < DN; i++) { dp[i * 3] = (rnd() - .5) * 3.2; dp[i * 3 + 1] = .2 + rnd() * 3.4; dp[i * 3 + 2] = 6 - rnd() * 44; }
+  const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+  const dustMat = new THREE.PointsMaterial({ color: 0x8a919b, size: .014, transparent: true, opacity: .5, depthWrite: false });
+  const dustU = { value: 0 };
+  dustMat.onBeforeCompile = sh => { sh.uniforms.uT = dustU; sh.vertexShader = 'uniform float uT;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y += sin(uT * .32 + position.x * 2.1 + position.z * .7) * .09;\ntransformed.x += cos(uT * .21 + position.z * 1.3) * .06;\ntransformed.z += sin(uT * .17 + position.y * 1.7) * .08;'); };
+  scene.add(new THREE.Points(dg, dustMat));
   const ring = add(new THREE.TorusGeometry(.12, .009, 8, 40), new THREE.MeshBasicMaterial({ color: 0x16181b }), 0, -.225, 0, agent); ring.rotation.x = Math.PI / 2;
 
   // scan lines: from the agent's face to the corners of a rack door
@@ -278,7 +299,7 @@ function build(scene, mobile) {
     Object.assign(key.shadow.camera, { left: -16, right: 16, top: 34, bottom: -34, near: 1, far: 50 }); key.shadow.camera.updateProjectionMatrix();
   }
   const fill = new THREE.DirectionalLight(0xf3f6ff, .7); fill.position.set(5, 6, 10); scene.add(fill);
-  return { racks, main, leds, ledMesh, label, screen, monScreen, wallC, wallT, faceC, faceT, agent, ring, scanGeo, scanMat, mirror };
+  return { racks, main, leds, ledMesh, label, screen, monScreen, wallC, wallT, faceC, faceT, agent, shell, ring, scanGeo, scanMat, mirror, doors, wallEyes, wallDot, faceEyes, blob, dustU };
 }
 
 // ---------------------------------------------------------------- camera
@@ -320,37 +341,52 @@ function agentAt(t, idleT) {
 }
 
 // ---------------------------------------------------------------- run
-export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coins }) {
+export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coins, progress }) {
   try { await Promise.race([document.fonts.load(`600 22px ${FONT}`), new Promise(r => setTimeout(r, 1500))]); } catch {}
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: !!window.__shots });
-  const dpr = Math.min(mobile ? 1.25 : 1.5, devicePixelRatio || 1);
+  let dpr = Math.min(mobile ? 1.25 : 1.5, devicePixelRatio || 1);
   renderer.setPixelRatio(dpr); renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = !mobile; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;      // the hall never moves: its shadows are drawn once
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xf1f2f4); scene.fog = new THREE.FogExp2(0xf1f2f4, mobile ? .02 : .016);
   const P = build(scene, mobile), scr = P.screen;
   if (window.__shots) window.__scene = scene;
+  if (P.mirror) { const ob = P.mirror.onBeforeRender; let fr = 0; P.mirror.onBeforeRender = function (...a) { if ((fr++ & 1) === 0) ob.apply(this, a); }; }
   const cam = new THREE.PerspectiveCamera(40, 1, .05, 90);
   const portrait = () => innerWidth / innerHeight < .9;
   let S = path(portrait());
   function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); S = path(portrait()); }
   resize(); addEventListener('resize', resize);
 
+  // static art, drawn once: the agent's brackets, the wall
+  { const g = P.faceC.getContext('2d'); g.clearRect(0, 0, 256, 256); mark(g, 8, 8, 240, '#0b0c0e', { eyes: false }); P.faceT.needsUpdate = true; }
+  const n = Math.min((coins || []).length, 999);
+  { const g = P.wallC.getContext('2d'), W = 2048, H = 640;
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H); mark(g, W / 2 - 230, H / 2 - 230, 460, '#0b0c0e', { eyes: false });
+    g.font = `600 30px ${FONT}`; g.textBaseline = 'middle'; g.fillStyle = '#8a8e95'; g.fillText('agentd', 90, 120); g.fillStyle = '#0b0c0e'; g.fillText('online', 128, 166); g.fillStyle = '#8a8e95'; g.fillText('agents ' + n, 90, 212);
+    g.textAlign = 'right'; g.fillStyle = '#0b0c0e'; g.fillText('nfa.', W - 90, 120); g.fillStyle = '#8a8e95'; g.fillText('non-fungible agents', W - 90, 166); g.textAlign = 'left';
+    g.fillStyle = '#e3e5e8'; for (const x of [W / 4, W / 2, W * 3 / 4]) g.fillRect(x - 2, 0, 4, H); g.fillRect(0, H / 2 - 2, W, 4); P.wallT.needsUpdate = true; }
+
   // live hook: launched coins light up their racks and become what the agent checks on the way in
   const live = (coins || []).slice(0, P.main.length);
-  live.forEach((c, i) => { const r = P.main[i]; r.coin = c; P.label(r.id, '$' + c.symbol + '  ·  ' + (c.coll || 'agent'), true); });
+  // coins take racks along the agent's way: first by its two stops, then outward from them, alternating sides
+  const slots = [0, 1].map(k => P.main.filter(r => r.side === SCANS[k].side).sort((a, b) => Math.abs(a.z - SCANS[k].z) - Math.abs(b.z - SCANS[k].z)));
+  live.forEach((c, i) => { const r = slots[i % 2][Math.floor(i / 2)]; if (!r) return; r.coin = c; P.label(r.id, '$' + c.symbol + '  ·  ' + (c.coll || 'agent'), true); });
   const scanRack = k => {
-    const withCoin = P.main.filter(r => r.coin && r.side === SCANS[k].side);
-    if (withCoin.length) return withCoin[Math.min(k, withCoin.length - 1)];
+    const withCoin = P.main.filter(r => r.coin && r.side === SCANS[k].side).sort((a, b) => Math.abs(a.z - SCANS[k].z) - Math.abs(b.z - SCANS[k].z));
+    if (withCoin.length) return withCoin[0];
     return P.main.filter(r => r.side === SCANS[k].side).reduce((a, b) => Math.abs(b.z - SCANS[k].z) < Math.abs(a.z - SCANS[k].z) ? b : a);
   };
   SCANS.forEach((s, k) => { const r = scanRack(k); s.z = r.z; s.rack = r; });
+  const rackText = r => r.coin ? `${r.id} · $${r.coin.symbol} · ${r.coin.coll || 'agent'}` : `${r.id} · open slot · launch a coin to fill it`;
 
-  const st = { phase: 'idle', t0: performance.now(), tFilm: 0, tReady: 0, tDive: 0, freeze: null, mx: 0, my: 0, px: 0, py: 0, blinkAt: 0, hover: false, lean: 0, done: false, skip: false };
+  const st = { phase: 'idle', t0: performance.now(), filmT: 0, wv: 0, tDive: 0, freeze: null, mx: 0, my: 0, px: 0, py: 0, blinkAt: 2, hover: false, lean: 0, done: false, skip: false,
+    hov: null, hovT: 0, userScan: null, poke: 0, ledT: 0, scrKey: '', diveAcc: 0, moved: 0 };
   const setPhase = p => { st.phase = p; onPhase && onPhase(p); };
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(9, 9);
   const onScreen = () => { ray.setFromCamera(ndc, cam); return ray.intersectObject(P.monScreen, false).length > 0; };
-  const sfx = (n, a) => { try { sound && sound.sfx(n, a); } catch {} };
+  const sfx = (nm, a) => { try { sound && sound.sfx(nm, a); } catch {} };
 
   // the boot, as events on the film clock
   const Q = []; let qi = 0; const ev = (ms, fn) => Q.push({ ms, fn });
@@ -359,7 +395,6 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
   at(0, () => { scr.off = false; scr.power = 0; sfx('power'); });
   for (let i = 1; i <= 16; i++) at(22, () => { scr.power = i / 16; scr.dirty = true; });
   at(30, () => { scr.power = 1; say([['nfa agentd 1.0', C.ink], ['  solana mainnet', C.dim]]); sfx('beep'); });
-  const n = live.length;
   for (const [a, b] of [['vault keys', 'none held here'], ['pump.fun programs', 'linked'], ['magic eden market', 'reading'], ['agents online', n ? String(n) : '0 · launch one']]) {
     const dots = ' ' + '.'.repeat(Math.max(3, 26 - a.length)) + ' '; let i;
     at(150, () => { i = scr.push([[a, C.ink], [dots, C.dim]]); sfx('tick'); });
@@ -374,66 +409,77 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
   Q.sort((a, b) => a.ms - b.ms);
   const flush = t => { while (qi < Q.length && (st.skip || Q[qi].ms <= t)) Q[qi++].fn(); };
 
-  function start() { if (st.phase !== 'idle') return; st.tFilm = performance.now(); setPhase('film'); sfx('whoosh'); }
+  function start() { if (st.phase !== 'idle') return; st.filmT = .001; setPhase('film'); sfx('whoosh'); }
   function skip() {
     if (st.phase === 'idle') start();
     if (st.phase !== 'film') return;
     st.skip = true; st.blend = { t: performance.now(), from: cam.position.clone(), look: (st.look || S.end[1]).clone(), fov: cam.fov };
   }
-  function ready() { if (st.phase !== 'film') return; st.tReady = performance.now(); setPhase('ready'); }
+  function ready() { if (st.phase !== 'film') return; setPhase('ready'); }
   function dive() {
     if (st.phase === 'dive' || st.done) return;
     if (st.phase !== 'ready') { st.pending = true; skip(); return; }
     st.tDive = performance.now(); st.diveFrom = cam.position.clone(); st.diveLook = (st.look || MON).clone(); setPhase('dive'); scr.prompt = false; sfx('dive');
   }
+  // input: keys and wheel walk the aisle, the mouse looks around, racks and the agent answer to clicks
   const key = e => {
     if (st.done) return;
     if (e.key === 'Escape') { e.preventDefault(); if (st.phase === 'film' || st.phase === 'idle') skip(); else if (st.phase === 'ready') dive(); return; }
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (st.phase === 'idle') start(); else if (st.phase === 'film') skip(); else if (st.phase === 'ready') dive(); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (st.phase === 'idle') start(); else if (st.phase === 'film') skip(); else if (st.phase === 'ready') dive(); return; }
+    const fwd = e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 's' || e.key === 'd', back = e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'w' || e.key === 'a';
+    if (fwd || back) { e.preventDefault(); if (st.phase === 'idle' && fwd) start(); if (st.phase === 'film') st.wv = Math.max(-.08, Math.min(.12, st.wv + (fwd ? .035 : -.035))); }
   };
   addEventListener('keydown', key);
-  const pm = e => { st.px = e.clientX / innerWidth * 2 - 1; st.py = e.clientY / innerHeight * 2 - 1; ndc.set(st.px, -st.py); };
+  const wheel = e => {
+    if (st.done) return; e.preventDefault();
+    const d = Math.max(-120, Math.min(120, e.deltaY));
+    if (st.phase === 'idle') { if (d > 0) start(); return; }
+    if (st.phase === 'film') st.wv = Math.max(-.08, Math.min(.12, st.wv + d * .0011));
+    if (st.phase === 'ready') { st.diveAcc = Math.max(0, st.diveAcc + d); if (st.diveAcc > 260) dive(); }
+  };
+  canvas.addEventListener('wheel', wheel, { passive: false });
+  let touchY = null;
+  canvas.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
+  canvas.addEventListener('touchmove', e => { if (touchY == null) return; const d = touchY - e.touches[0].clientY; touchY = e.touches[0].clientY; if (st.phase === 'film') st.wv = Math.max(-.08, Math.min(.12, st.wv + d * .0016)); }, { passive: true });
+  const pm = e => { st.px = e.clientX / innerWidth * 2 - 1; st.py = e.clientY / innerHeight * 2 - 1; ndc.set(st.px, -st.py); st.moved = performance.now(); };
   addEventListener('pointermove', pm, { passive: true });
-  const click = e => { ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight * 2 - 1)); if (st.phase === 'idle') start(); else if (st.phase === 'film') skip(); else if (st.phase === 'ready') dive(); };
+  const doorMeshes = P.doors.map(d => d.mesh);
+  function pickRack() {
+    ray.setFromCamera(ndc, cam);
+    const h = ray.intersectObjects(doorMeshes, false)[0];
+    if (!h || h.distance > 26) return null;
+    const d = P.doors.find(x => x.mesh === h.object), r = d && d.list[h.instanceId];
+    return r && r.row === 0 ? r : null;
+  }
+  const pickAgent = () => { ray.setFromCamera(ndc, cam); return ray.intersectObject(P.shell, false).length > 0; };
+  const click = e => {
+    ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight * 2 - 1));
+    if (st.phase === 'dive' || st.done) return;
+    if (pickAgent()) { st.poke = performance.now(); sfx('ok'); return; }
+    const r = st.phase !== 'ready' ? pickRack() : null;
+    if (r) { st.userScan = { r, t0: performance.now(), from: P.agent.position.clone() }; sfx('scan'); return; }
+    if (st.phase === 'idle') start(); else if (st.phase === 'film') skip(); else if (st.phase === 'ready') dive();
+  };
   canvas.addEventListener('click', click);
 
-  // scan brackets over the racks, drawn in the page so they stay crisp
-  const mk = document.createElement('div'); mk.className = 'mk'; mk.innerHTML = '<i></i><i></i><i></i><i></i><b></b>'; marks.appendChild(mk);
-  const mkLabel = mk.querySelector('b');
+  // brackets over racks, drawn in the page so they stay crisp: one for the agent's scan, one for your cursor
+  const mkEl = cls => { const m = document.createElement('div'); m.className = 'mk ' + cls; m.innerHTML = '<i></i><i></i><i></i><i></i><b></b>'; marks.appendChild(m); return { el: m, label: m.querySelector('b') }; };
+  const MK = mkEl('scan'), HV = mkEl('hov');
   const proj = v => { const p = v.clone().project(cam); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight, z: p.z }; };
-  function showMark(r, k, text) {
-    if (!r || k <= 0) { mk.style.opacity = 0; return; }
+  function showMark(M, r, k, text) {
+    if (!r || k <= 0) { if (M.el.style.opacity !== '0') M.el.style.opacity = 0; return; }
     const pts = [V(r.face, .2, r.z - RW / 2), V(r.face, .2, r.z + RW / 2), V(r.face, RH - .05, r.z - RW / 2), V(r.face, RH - .05, r.z + RW / 2)].map(proj);
-    if (pts.some(p => p.z > 1)) { mk.style.opacity = 0; return; }
+    if (pts.some(p => p.z > 1)) { M.el.style.opacity = 0; return; }
     const x0 = Math.min(...pts.map(p => p.x)), x1 = Math.max(...pts.map(p => p.x)), y0 = Math.min(...pts.map(p => p.y)), y1 = Math.max(...pts.map(p => p.y)), pad = 8 + (1 - k) * 26;
-    mk.style.cssText = `opacity:${k};left:${x0 - pad}px;top:${y0 - pad}px;width:${x1 - x0 + pad * 2}px;height:${y1 - y0 + pad * 2}px`;
-    if (mkLabel.textContent !== text) mkLabel.textContent = text;
+    M.el.style.cssText = `opacity:${k};left:${x0 - pad}px;top:${y0 - pad}px;width:${x1 - x0 + pad * 2}px;height:${y1 - y0 + pad * 2}px`;
+    if (M.label.textContent !== text) M.label.textContent = text;
   }
-
-  // the agent's face, and the same face on the wall, looking at you
-  let faceKey = '';
-  function face(blink, look) {
-    const k = blink.toFixed(2) + ':' + look.toFixed(2); if (k === faceKey) return; faceKey = k;
-    const g = P.faceC.getContext('2d'); g.clearRect(0, 0, 256, 256); mark(g, 8, 8, 240, '#0b0c0e', { blink, look });
-    P.faceT.needsUpdate = true;
-  }
-  let wallKey = '';
-  function drawWall(blink, look, t) {
-    const k = blink.toFixed(2) + ':' + look.toFixed(2) + ':' + Math.floor(t * 2); if (k === wallKey) return; wallKey = k;
-    const g = P.wallC.getContext('2d'), W = 2048, H = 640;
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
-    mark(g, W / 2 - 230, H / 2 - 230, 460, '#0b0c0e', { blink, look });
-    g.font = `600 30px ${FONT}`; g.fillStyle = '#8a8e95'; g.textBaseline = 'middle';
-    g.fillText('agentd', 90, 120); g.fillStyle = '#0b0c0e'; g.fillText((Math.floor(t * 2) % 2 ? '●' : '○') + ' online', 90, 166); g.fillStyle = '#8a8e95'; g.fillText('agents ' + n, 90, 212);
-    g.textAlign = 'right'; g.fillStyle = '#0b0c0e'; g.fillText('nfa.', W - 90, 120); g.fillStyle = '#8a8e95'; g.fillText('non-fungible agents', W - 90, 166); g.textAlign = 'left';
-    g.fillStyle = '#e3e5e8'; for (const x of [W / 4, W / 2, W * 3 / 4]) g.fillRect(x - 2, 0, 4, H); g.fillRect(0, H / 2 - 2, W, 4);
-    P.wallT.needsUpdate = true;
-  }
+  const bar = document.createElement('div'); bar.className = 'iprog'; marks.appendChild(bar);
 
   // LEDs: black dots that hold, blink or flicker; the scanned rack goes dark top to bottom
   const ledCol = P.ledMesh.instanceColor.array;
-  function lights(t) {
-    const L = P.leds, scanR = st.scanRack, sweep = st.sweep;
+  function lights(t, scanR, sweep) {
+    const L = P.leds;
     for (let i = 0; i < L.length; i++) {
       const l = L[i]; let on;
       if (l.kind === 0) on = Math.sin(t * .5 + l.ph) > -.6;
@@ -460,25 +506,28 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     render() { step(performance.now()); },
   };
 
-  let last = performance.now();
+  let last = performance.now(), slow = 0;
   function frame(now) { if (st.done) return; requestAnimationFrame(frame); step(now); }
   function step(now) {
-    if (st.freeze && st.freeze.film != null) st.tFilm = now - st.freeze.film * 1000;
-    if (st.freeze && st.freeze.dive != null) st.tDive = now - st.freeze.dive;
     const dt = Math.min(.05, (now - last) / 1000); last = now;
-    const tAll = (now - st.t0) / 1000;
-    const ft = st.phase === 'idle' ? 0 : (now - st.tFilm) / 1000;
+    // keep it smooth: if frames run long for a while, render fewer pixels
+    if (!window.__shots) { slow = dt > .024 ? slow + 1 : Math.max(0, slow - 1); if (slow > 90 && dpr > .9) { dpr = Math.max(.85, dpr - .2); renderer.setPixelRatio(dpr); resize(); slow = 0; } }
+    if (st.freeze && st.freeze.film != null) st.filmT = st.freeze.film;
+    else if (st.phase === 'film' || st.phase === 'ready' || st.phase === 'dive') { st.filmT = Math.max(.001, st.filmT + dt + (st.phase === 'film' ? st.wv : 0)); st.wv *= .9; }
+    if (st.freeze && st.freeze.dive != null) st.tDive = now - st.freeze.dive;
+    const tAll = (now - st.t0) / 1000, ft = st.phase === 'idle' ? 0 : st.filmT;
     if (st.phase !== 'idle') flush(ft * 1000);
     // camera
     const port = portrait(), [f0, f1] = FOV(port);
-    const CA = camAt(S, st.phase === 'idle' ? 0 : ft);
+    const CA = camAt(S, ft);
     let u = st.phase === 'idle' ? 0 : clamp01(ft / FILM);
-    let pos = CA.pos, look = CA.look, fov = f0 + (f1 - f0) * sine(CA.u);
+    let pos = CA.pos.clone(), look = CA.look.clone(), fov = f0 + (f1 - f0) * sine(CA.u);
     if (st.blend) { const b = ease(clamp01((now - st.blend.t) / 900)); pos = st.blend.from.clone().lerp(S.end[0], b); look = st.blend.look.clone().lerp(S.end[1], b); fov = st.blend.fov + (f1 - st.blend.fov) * b; if (b >= 1) u = 1; }
     if (st.phase === 'film' && st.posted && (u >= 1 || (st.blend && now - st.blend.t > 900))) { ready(); if (st.pending) { st.pending = false; dive(); } }
-    st.mx += (st.px - st.mx) * .04; st.my += (st.py - st.my) * .04;
-    const settle = st.phase === 'idle' ? .6 : st.phase === 'ready' ? 1 : smooth(FILM - 1, FILM + .5, ft);
-    pos.x += Math.sin(tAll * .31) * .03 + st.mx * .1 * settle; pos.y += Math.sin(tAll * .45) * .015 - st.my * .05 * settle;
+    st.mx += (st.px - st.mx) * .05; st.my += (st.py - st.my) * .05;
+    const settle = st.phase === 'idle' ? 1 : st.phase === 'ready' ? .7 : .35 + .35 * smooth(FILM - 1, FILM + .5, ft);
+    pos.x += Math.sin(tAll * .31) * .03 + st.mx * .12 * settle; pos.y += Math.sin(tAll * .45) * .015 - st.my * .06 * settle;
+    const far = pos.distanceTo(look); look.x += st.mx * far * .075 * settle; look.y -= st.my * far * .045 * settle;      // look around with the mouse
     if (st.phase === 'ready') { const h = onScreen(); if (h !== st.hover) { st.hover = h; canvas.style.cursor = h ? 'pointer' : 'default'; } }
     st.lean += ((st.phase === 'ready' && st.hover ? 1 : 0) - st.lean) * .06;
     if (st.lean > .001) { pos.lerp(V(MON.x, MON.y + .05, MON.z + 1.4), st.lean * .18); look.lerp(MON, st.lean * .3); }
@@ -491,43 +540,76 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     }
     if (Math.abs(cam.fov - fov) > .001) { cam.fov = fov; cam.updateProjectionMatrix(); }
     st.look = look; cam.position.copy(pos); cam.lookAt(look);
+    bar.style.transform = `scaleX(${st.phase === 'film' ? clamp01(ft / FILM) : st.phase === 'idle' ? 0 : 1})`;
 
-    // the agent
+    // the agent: its path, or a detour to the rack you clicked, or a spin when you poke it
     const at = st.blend ? Math.max(ft, 10.5) : ft;
     const A = agentAt(st.phase === 'idle' ? 0 : at, tAll);
     if (st.blend && !st.blendA) st.blendA = { t: now, from: P.agent.position.clone() };
-    let ap = A.p; if (st.blendA) { const b = ease(clamp01((now - st.blendA.t) / 900)); ap = st.blendA.from.clone().lerp(A.p, b); }
+    let ap = A.p, wantR = null;
+    if (st.blendA) { const b = ease(clamp01((now - st.blendA.t) / 900)); ap = st.blendA.from.clone().lerp(A.p, b); }
+    let us = 0, usK = 0;
+    if (st.userScan) {
+      const el = (now - st.userScan.t0) / 1000, r = st.userScan.r;
+      if (el > 2.7) st.userScan = null;
+      else {
+        us = smooth(0, .6, el) * (1 - smooth(2.1, 2.7, el)); usK = smooth(.5, .8, el) * (1 - smooth(1.9, 2.2, el));
+        const tgt = V(r.face - r.side * .92, 1.55, r.z); ap = ap.clone().lerp(tgt, us); if (us > .5) wantR = r.side < 0 ? -Math.PI / 2 : Math.PI / 2;
+      }
+    }
     P.agent.position.copy(ap);
     const toCam = Math.atan2(cam.position.x - ap.x, cam.position.z - ap.z);
-    const want = (st.phase === 'idle' || at >= 10.4) ? toCam + st.mx * .15 : A.r;
-    let dr = want - P.agent.rotation.y; while (dr > Math.PI) dr -= Math.PI * 2; while (dr < -Math.PI) dr += Math.PI * 2;
-    P.agent.rotation.y += dr * (st.freeze ? 1 : Math.min(1, dt * 5)); P.agent.rotation.z = Math.sin(tAll * 1.1) * .04 - A.v * .12; P.agent.rotation.x = A.v * .14;
-    // blinks for the agent, the wall and the console
-    if (tAll > st.blinkAt) st.blinkAt = tAll + 2.6 + Math.random() * 3.2;
-    const bl = st.freeze ? 0 : Math.max(0, 1 - Math.abs(tAll - (st.blinkAt - 2.6)) * 9);
-    const lookX = clamp01((st.mx + 1) / 2) * 2 - 1;
+    let want = wantR != null ? wantR : (st.phase === 'idle' || at >= 10.4) ? toCam + st.mx * .25 : A.r;
+    const pk = clamp01((now - st.poke) / 800);
+    if (st.yaw == null) st.yaw = want;
+    let dr = want - st.yaw; while (dr > Math.PI) dr -= Math.PI * 2; while (dr < -Math.PI) dr += Math.PI * 2;
+    st.yaw += dr * (st.freeze ? 1 : Math.min(1, dt * 5));
+    const spin = pk < 1 ? ease(pk) * Math.PI * 2 : 0;
+    P.agent.rotation.y = st.yaw + spin;
+    P.agent.rotation.z = Math.sin(tAll * 1.1) * .04 - A.v * .12; P.agent.rotation.x = A.v * .14 + (pk < 1 ? Math.sin(pk * Math.PI) * .25 : 0);
+    P.agent.position.y += pk < 1 ? Math.sin(pk * Math.PI) * .18 : 0;
+    P.blob.position.set(P.agent.position.x, .006, P.agent.position.z); P.blob.material.opacity = clamp01(1.3 - P.agent.position.y * .35);
+    // blinks and looks, for the agent's face, the wall and the console
+    if (tAll > st.blinkAt) st.blinkAt = tAll + 2.4 + Math.random() * 3.4;
+    let bl = st.freeze ? 0 : Math.max(0, 1 - Math.abs(tAll - (st.blinkAt - 2.6)) * 9);
+    if (pk < 1) bl = Math.max(bl, Math.abs(Math.sin(pk * Math.PI * 3)) > .8 ? 1 : 0);
+    const lookX = Math.max(-1, Math.min(1, st.mx * 1.4));
     let scanK = 0, scanI = -1;
     SCANS.forEach((s, i) => { const kk = smooth(s.t0 - .1, s.t0 + .3, at) * (1 - smooth(s.t1 - .3, s.t1, at)); if (kk > scanK) { scanK = kk; scanI = i; } });
     if (st.phase === 'idle' || st.skip) scanK = 0;
-    face(bl, scanK > 0 ? 0 : lookX * .6);
-    drawWall(bl, cam.position.x * .2 + lookX * .3, tAll);
-    scr.eye = bl; scr.lookv = lookX * .5; if (scr.logo >= 1) scr.dirty = true;
-    // the scan: lines from the face to the door, the rack's lights going dark in a sweep, brackets in the page
-    if (scanK > 0) {
-      const s = SCANS[scanI], r = s.rack, f = P.agent.localToWorld(V(0, 0, .22));
-      const c = [V(r.face, .25, r.z - RW / 2), V(r.face, .25, r.z + RW / 2), V(r.face, RH - .1, r.z + RW / 2), V(r.face, RH - .1, r.z - RW / 2)];
+    const eyeLook = scanK > 0 || usK > 0 ? 0 : lookX * .7;
+    P.faceEyes.forEach((e, i) => { e.scale.y = 1 - bl * .86; e.position.x = (i ? .0356 : -.0356) + eyeLook * .015; });
+    const wl = Math.max(-1, Math.min(1, cam.position.x * .2 + lookX * .5));
+    P.wallEyes.forEach((e, i) => { e.scale.y = 1 - bl * .86; e.position.x = (i ? .165 : -.165) + wl * .07; });
+    P.wallDot.visible = Math.floor(tAll * 1.6) % 2 === 0;
+    const sk = `${(bl > .5 ? 1 : 0)}:${Math.round(lookX * 2)}`; if (sk !== st.scrKey && scr.logo >= 1) { st.scrKey = sk; scr.eye = bl > .5 ? 1 : 0; scr.lookv = Math.round(lookX * 2) / 4; scr.dirty = true; }
+    // scans: the film's two, or the one you asked for
+    let sR = null, sK = 0, sText = '';
+    if (usK > 0) { sR = st.userScan.r; sK = usK; sText = rackText(sR); }
+    else if (scanK > 0) { sR = SCANS[scanI].rack; sK = scanK; sText = rackText(sR); }
+    if (sR) {
+      const f = P.agent.localToWorld(V(0, 0, .22));
+      const c = [V(sR.face, .25, sR.z - RW / 2), V(sR.face, .25, sR.z + RW / 2), V(sR.face, RH - .1, sR.z + RW / 2), V(sR.face, RH - .1, sR.z - RW / 2)];
       const a = P.scanGeo.attributes.position.array; let o = 0; const put = v => { a[o++] = v.x; a[o++] = v.y; a[o++] = v.z; };
       for (let i = 0; i < 4; i++) { put(f); put(c[i]); } for (let i = 0; i < 4; i++) { put(c[i]); put(c[(i + 1) % 4]); }
-      P.scanGeo.attributes.position.needsUpdate = true; P.scanMat.opacity = scanK * .55;
-      st.scanRack = P.racks.indexOf(r); st.sweep = RH - ((at - s.t0) / (s.t1 - s.t0) % 1) * RH;
-      showMark(r, scanK, r.coin ? `${r.id} · $${r.coin.symbol} · ${r.coin.coll || 'agent'}` : `${r.id} · open slot`);
-      if (!st['beep' + scanI] && scanK > .5) { st['beep' + scanI] = 1; sfx('scan'); }
-    } else { P.scanMat.opacity = 0; st.scanRack = null; showMark(null, 0); }
-    lights(tAll);
+      P.scanGeo.attributes.position.needsUpdate = true; P.scanMat.opacity = sK * .55;
+      st.scanRack = P.racks.indexOf(sR); st.sweep = RH - ((tAll * .8) % 1) * RH;
+      showMark(MK, sR, sK, sText);
+      if (scanK > 0 && !st['beep' + scanI] && scanK > .5) { st['beep' + scanI] = 1; sfx('scan'); }
+    } else { P.scanMat.opacity = 0; st.scanRack = null; showMark(MK, null, 0); }
+    // hover: whatever rack is under your cursor gets a bracket and its label
+    if (!mobile && st.phase !== 'dive' && st.phase !== 'ready' && now - st.hovT > 70 && now - st.moved < 1500) {
+      st.hovT = now; const r = pickRack();
+      if (r !== st.hov) { st.hov = r; canvas.style.cursor = r ? 'pointer' : 'default'; if (r) sfx('tick'); }
+    }
+    if (st.phase === 'ready' || st.phase === 'dive') st.hov = null;
+    if (st.hov && st.hov !== sR) showMark(HV, st.hov, 1, rackText(st.hov) + ' · click to scan'); else showMark(HV, null, 0);
+    if (now - st.ledT > 50 || window.__shots) { st.ledT = now; lights(tAll, st.scanRack, st.sweep); }
+    P.dustU.value = tAll;
     scr.draw(now);
     renderer.render(scene, cam);
   }
-  function cleanup() { removeEventListener('keydown', key); removeEventListener('resize', resize); removeEventListener('pointermove', pm); canvas.removeEventListener('click', click); setTimeout(() => { renderer.dispose(); }, 1500); }
+  function cleanup() { removeEventListener('keydown', key); removeEventListener('resize', resize); removeEventListener('pointermove', pm); canvas.removeEventListener('click', click); canvas.removeEventListener('wheel', wheel); setTimeout(() => { renderer.dispose(); }, 1500); }
   if (!window.__shots) requestAnimationFrame(frame);
   return api;
 }

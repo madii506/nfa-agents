@@ -19,12 +19,15 @@ export function install(T) {
     { id: 'backpack', name: 'Backpack', get: () => window.backpack && (window.backpack.solana || window.backpack), url: 'https://backpack.app', deep: null },
   ];
   const walBtn = document.querySelector('#wal');
+  const wl = new Set(); W.on = f => { wl.add(f); return () => wl.delete(f); }; const emit = () => wl.forEach(f => { try { f(W.me); } catch {} });
+  let watched = null;
   function setMe(pk, pr, id) {
     W.me = pk; W.prov = pr; W.id = id; T.store.set('nfa:wallet', id);
     walBtn.textContent = short(pk); walBtn.classList.add('on');
-    if (pr.on) try { pr.on('accountChanged', kk => { if (kk) setMe(kk.toString(), pr, id); else logout(); }); } catch {}
+    if (pr.on && watched !== pr) try { watched = pr; pr.on('accountChanged', kk => { if (kk) setMe(kk.toString(), pr, id); else logout(); }); } catch {}
+    emit();
   }
-  function logout() { try { W.prov && W.prov.disconnect && W.prov.disconnect(); } catch {} W.me = W.prov = W.id = null; T.store.set('nfa:wallet', null); walBtn.textContent = 'connect'; walBtn.classList.remove('on'); }
+  function logout() { try { W.prov && W.prov.disconnect && W.prov.disconnect(); } catch {} W.me = W.prov = W.id = null; T.store.set('nfa:wallet', null); walBtn.textContent = 'connect'; walBtn.classList.remove('on'); emit(); }
   walBtn.addEventListener('click', () => T.run(W.me ? 'wallet' : 'connect'));
   (async function reconnect() { const id = T.store.get('nfa:wallet'), p = PROVS.find(x => x.id === id); if (!p) return; for (let i = 0; i < 8 && !p.get(); i++) await sleep(250); if (!p.get()) return; try { const pr = p.get(), r = await pr.connect({ onlyIfTrusted: true }), pk = (r && r.publicKey) || pr.publicKey; if (pk) setMe(pk.toString(), pr, id); } catch {} })();
 
@@ -39,9 +42,17 @@ export function install(T) {
     }
     const pr = p.get(); if (!pr) { print(`<span class="dim">${p.name} isn’t installed here.</span> <a class="lk" href="${p.url}" target="_blank" rel="noopener">get it ↗</a>`); return false; }
     const s = spinner(`asking ${p.name} to connect`);
-    try { const r = await pr.connect(), pk = (r && r.publicKey) || pr.publicKey; if (!pk) throw new Error('no key'); setMe(pk.toString(), pr, p.id); s.done(`connected <b>${short(W.me)}</b> <span class="dim">· ${p.name}</span>`); return true; }
-    catch (e) { s.fail(`${p.name} didn’t connect. ${/reject|denied|cancel/i.test(String(e && e.message)) ? 'You declined it.' : ''}`); return false; }
+    try { await connectTo(p.id); s.done(`connected <b>${short(W.me)}</b> <span class="dim">· ${p.name}</span>`); return true; }
+    catch (e) { s.fail(esc(e.message)); return false; }
   }
+  // connect one wallet by id, without printing (the studio has its own buttons)
+  async function connectTo(id) {
+    const p = PROVS.find(x => x.id === id); if (!p) throw new Error('Unknown wallet.');
+    const pr = p.get(); if (!pr) throw new Error(`${p.name} isn’t installed here.`);
+    try { const r = await pr.connect(), pk = (r && r.publicKey) || pr.publicKey; if (!pk) throw new Error('no key'); setMe(pk.toString(), pr, p.id); return W.me; }
+    catch (e) { throw new Error(/reject|denied|cancel|closed/i.test(String(e && e.message)) ? `You declined it in ${p.name}.` : `${p.name} didn’t connect.`); }
+  }
+  async function balance() { const r = await rpc('getBalance', [W.me, { commitment: 'confirmed' }]); return r.value; }
 
   // ---------------------------------------------------------------- solana, through the page's narrow rpc window
   let web3 = null;
@@ -114,19 +125,25 @@ export function install(T) {
   function dataUrl(c) { let d = c.toDataURL('image/png'); if (d.length > 520000) { for (const q of [.9, .82, .72, .6]) { d = c.toDataURL('image/jpeg', q); if (d.length < 520000) break; } } return d; }
   function pickFile() { return new Promise(res => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/png,image/jpeg,image/webp,image/gif'; i.onchange = () => res(i.files && i.files[0] || null); i.click(); setTimeout(() => res(null), 120000); }); }
 
-  // ---------------------------------------------------------------- the wizard
-  T.reg('launch', { desc: 'launch a coin paired with an NFT collection', usage: 'launch', alias: ['new', 'create', 'deploy'], more: 'how the fees move: {cat fees.md}',
-    async run(a, { signal }) {
+  // ---------------------------------------------------------------- launch: the studio (visual) or the same questions as text
+  T.reg('launch', { desc: 'launch a coin on pump.fun, paired with an NFT collection', usage: 'launch [collection] · launch cli', alias: ['new', 'create', 'deploy', 'pair'], more: 'how the fees move: {cat fees.md}',
+    complete: () => ['cli', ...((T.market && T.market.symbols && T.market.symbols()) || [])],
+    async run(a, ctx) {
+      if (/^(cli|--cli|text)$/i.test(a[0] || '')) return wizard(a.slice(1), ctx);
+      if (T.studio) { T.studio.open({ c: a[0] }); print(`<span class="dim">launch studio open${a[0] ? ' · paired with ' + esc(a[0]) : ''} · esc closes it ·</span> ${k('launch cli', 'or answer it here')}`); return; }
+      return wizard(a, ctx);
+    } });
+  async function wizard(a, { signal }) {
       print('<b>launch a coin</b> <span class="dim">· paired with one NFT collection · its fees lock 80/20 at launch · esc cancels</span>');
       // name and ticker
       let name; for (;;) { name = await T.ask('name', { hint: 'up to 32 characters' }); if (name == null) return; name = name.trim(); if (name && new TextEncoder().encode(name).length <= 32) break; print('<span class="red">a name of 1–32 characters.</span>'); }
       const sug = name.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 6);
       let symbol; for (;;) { symbol = await T.ask('ticker', { hint: sug || 'e.g. AGENT' }); if (symbol == null) return; symbol = (symbol.trim() || sug).replace(/^\$/, '').toUpperCase(); if (/^[A-Z0-9]{1,10}$/.test(symbol)) break; print('<span class="red">1–10 letters or numbers.</span>'); }
       // the collection, checked live
-      let coll; const sy = (T.market && T.market.symbols && T.market.symbols()) || [];
+      let coll, pre = a[0] || null; const sy = (T.market && T.market.symbols && T.market.symbols()) || [];
       print('<span class="dim">pair it with a solana collection on magic eden, by its symbol (the part after /marketplace/ in its url).</span>');
       for (;;) {
-        const c = await T.ask('collection', { hint: sy[0] || 'mad_lads', choices: sy.slice(0, 6) }); if (c == null) return;
+        const c = pre != null ? pre : await T.ask('collection', { hint: sy[0] || 'mad_lads', choices: sy.slice(0, 6) }); pre = null; if (c == null) return;
         const v = (c.trim() || sy[0] || 'mad_lads').toLowerCase().replace(/^.*marketplace\//, '').replace(/[/?#].*$/, '');
         const s = spinner('checking ' + v + ' on magic eden'); const d = await api('/api/me?op=stats&c=' + encodeURIComponent(v), { signal }).catch(e => ({ ok: false, error: e.message }));
         if (d.ok) { coll = d; s.done(`<b>${esc(d.name)}</b> <span class="dim">· floor ${d.floor != null ? d.floor.toFixed(d.floor >= 1 ? 2 : 3) : '—'} ◎ · ${d.listed ?? '—'} listed</span>`); break; }
@@ -156,47 +173,74 @@ export function install(T) {
       const go = await T.ask('launch it?', { hint: 'yes or no', choices: [{ value: 'yes', label: 'launch it' }, { value: 'no', label: 'cancel' }] });
       if (!go || !/^y|^launch/i.test(go.trim())) { print('<span class="dim">cancelled. nothing was sent.</span>'); return; }
       if (!W.me) { const ok = await connect(); if (!ok) { print(`<span class="dim">connect a wallet, then run ${k('launch')} again.</span>`); return; } }
-      await doLaunch({ name, symbol, coll, policy, canvas, buy, signal });
-    } });
+      await doLaunch({ name, symbol, coll, policy, canvas, buy });
+  }
 
-  async function doLaunch({ name, symbol, coll, policy, canvas, buy, signal }) {
-    const steps = ['recording the coin', 'building the transactions', 'reading them before you sign', 'waiting for your wallet', 'creating the coin', 'locking the fees 80/20', 'your first buy', 'waking its agent'];
-    let s = null; const step = i => { if (s) s.done(`<span class="dim">${steps[i - 1]}</span>`); s = spinner(steps[i]); T.agentState(steps[i]); };
+  // ---------------------------------------------------------------- the launch itself, shared by the studio and the wizard
+  const STEPS = ['record the coin', 'build the transactions', 'read them before you sign', 'sign in your wallet', 'create the coin on pump.fun', 'lock the fees 80/20', 'your first buy', 'wake its agent'];
+  const txA = sig => `<a class="lk" href="https://solscan.io/tx/${esc(sig)}" target="_blank" rel="noopener">tx ${esc(short(sig))} ↗</a>`;
+  const shareUrl = r => 'https://x.com/intent/post?text=' + encodeURIComponent(`I just launched $${r.symbol} on nfa, paired with ${r.coll.name}. Its agent spends the creator fees on ${r.coll.name} NFTs for ${r.policy === 'burn' ? 'the burn' : 'holders'}.\n\nhttps://pump.fun/coin/${r.mint}`);
+  // o: { name, symbol, coll: {c, name}, policy, canvas, buy, desc, links: {twitter, telegram, website} }
+  // ui: { step(i, note), note(i, html), skip(i), warn(i, text) } — told about each step as it happens
+  async function launchCore(o, ui) {
+    const step = (i, n) => { T.agentState(STEPS[i]); ui.step(i, n); };
     try {
       const w3 = await loadWeb3();
-      const mintKp = w3.Keypair.generate(), mint = mintKp.publicKey.toBase58();
-      step(0);
-      const meta = await api('/api/coin', { body: { mint, payer: W.me, name, symbol, collection: coll.c, coll_name: coll.name, policy, image: dataUrl(canvas) }, timeout: 30000 });
+      const mintKp = w3.Keypair.generate(), mint = mintKp.publicKey.toBase58(), ln = o.links || {};
+      step(0, 'coin address ' + short(mint));
+      const meta = await api('/api/coin', { body: { mint, payer: W.me, name: o.name, symbol: o.symbol, collection: o.coll.c, coll_name: o.coll.name, policy: o.policy, image: dataUrl(o.canvas), description: o.desc || '', twitter: ln.twitter || '', telegram: ln.telegram || '', website: ln.website || '' }, timeout: 30000 });
       if (!meta.ok) throw new Error(meta.error);
       const vault = await derive(w3, meta.studio, mint);
       if (vault !== meta.vault) throw new Error('The vault address didn’t check out, so nothing was sent.');
       const want = [{ address: vault, bps: 8000 }, { address: meta.treasury, bps: 2000 }];
+      ui.note(0, `coin address ${esc(short(mint))} · its agent vault ${esc(short(vault))}`);
       step(1);
-      const b = await api('/api/build', { body: { mint, payer: W.me, devBuy: String(Math.round(buy * 1e9)) }, timeout: 30000 });
+      const b = await api('/api/build', { body: { mint, payer: W.me, devBuy: String(Math.round((o.buy || 0) * 1e9)) }, timeout: 30000 });
       if (!b.ok) throw new Error(b.error);
       const txs = b.txs.map(t => w3.VersionedTransaction.deserialize(fromB64(t)));
+      ui.note(1, `${txs.length} transactions · ${b.sizes.reduce((x, v) => x + v, 0).toLocaleString()} bytes · built with pump.fun’s own sdk`);
       step(2); check(txs, { mint, me: W.me, shares: want });
       await simulate(txs[0]);
-      step(3); let signed; try { signed = await signAll(txs); } catch (e) { throw new Error(human(e)); }
+      ui.note(2, `creator is you · 80% → ${esc(short(vault))} · 20% → ${esc(short(meta.treasury))} · simulated`);
+      const pname = (PROVS.find(p => p.id === W.id) || {}).name || 'your wallet';
+      step(3, 'approve it in ' + pname); let signed; try { signed = await signAll(txs); } catch (e) { throw new Error(human(e)); }
       signed[0].sign([mintKp]);
       if (!signed[0].signatures.every(x => x && x.some(v => v !== 0))) throw new Error('A signature is missing, so nothing was sent.');
-      step(4); const sig = await send(signed[0]); await confirm(sig);
+      ui.note(3, 'signed in ' + pname);
+      step(4); const sig = await send(signed[0]); ui.note(4, txA(sig)); await confirm(sig);
       step(5);
       let routed = false;
-      try { const s2 = await send(signed[1]); await confirm(s2); routed = true; } catch { routed = await route(mint).catch(() => false); }
-      if (!routed) { s.fail(`the coin is live, but its fees aren’t locked yet. finish with ${k('coin ' + mint, 'coin ' + symbol)} → route.`); return; }
+      try { const s2 = await send(signed[1]); ui.note(5, txA(s2) + ' · admin revoked'); await confirm(s2); routed = true; } catch { routed = await route(mint).catch(() => false); }
+      if (!routed) { const e = new Error('The coin is live, but its fees aren’t locked yet.'); e.unrouted = mint; throw e; }
       let buyNote = '';
-      if (signed[2]) { step(6); try { const s3 = await send(signed[2]); await confirm(s3); } catch { buyNote = 'your first buy didn’t confirm; check your wallet.'; } }
+      if (signed[2]) { step(6); try { const s3 = await send(signed[2]); ui.note(6, txA(s3)); await confirm(s3); } catch { buyNote = 'your first buy didn’t confirm; check your wallet.'; ui.warn(6, buyNote); } }
+      else ui.skip(6);
       step(7);
       let st = null; for (let i = 0; i < 8; i++) { st = await api('/api/settle', { body: { mint, sig } }).catch(() => null); if (st && st.live) break; await sleep(2500); }
-      s.done('<span class="dim">its agent is awake</span>'); s = null;
-      T.coins.unshift({ mint, symbol, name, collection: coll.c, coll_name: coll.name, policy });
-      const el = document.createElement('div'); el.className = 'card';
-      el.innerHTML = `<div class="shot px"><img src="${esc(meta.image)}" alt=""><div class="vf wide"><i></i><i></i><i></i><i></i></div></div><div class="meta"><span class="tag">live</span><h4>${esc(name)} <span class="dim">$${esc(symbol)}</span></h4>
-        <div>paired with <b>${esc(coll.name)}</b> · NFTs to <b>${policy === 'burn' ? 'the burn' : 'holders'}</b></div><div class="dim">${esc(mint)}</div><div class="dim">fees 80% → ${esc(short(vault))} · 20% → ${esc(short(meta.treasury))} · locked</div>${buyNote ? `<div class="amber">${esc(buyNote)}</div>` : ''}
-        <div class="btnrow"><a class="tb pri" href="https://pump.fun/coin/${esc(mint)}" target="_blank" rel="noopener">open on pump.fun ↗</a><a class="tb" href="https://solscan.io/tx/${esc(sig)}" target="_blank" rel="noopener">transaction ↗</a><a class="tb" href="https://x.com/intent/post?text=${encodeURIComponent(`I just launched $${symbol} on nfa, paired with ${coll.name}. Its agent spends the fees on ${coll.name} NFTs for ${policy === 'burn' ? 'the burn' : 'holders'}.\n\n${location.origin}`)}" target="_blank" rel="noopener">share on x ↗</a></div></div>`;
-      T.node(el); setTimeout(() => el.querySelector('.vf').classList.remove('wide'), 60); T.sound && T.sound.sfx('ok'); T.agentState('idle');
-    } catch (e) { if (s) s.fail(esc(human(e))); else print(`<span class="red">✗</span> ${esc(human(e))}`); T.agentState('idle'); }
+      ui.note(7, 'on the board · its agent is awake');
+      T.coins.unshift({ mint, symbol: o.symbol, name: o.name, collection: o.coll.c, coll_name: o.coll.name, policy: o.policy, live_at: new Date().toISOString() });
+      try { T.agentLog && T.agentLog(`<b>$${esc(o.symbol)}</b> is live · paired with ${esc(o.coll.name)}`); } catch {}
+      return { mint, sig, vault, treasury: meta.treasury, image: meta.image, name: o.name, symbol: o.symbol, coll: o.coll, policy: o.policy, buyNote };
+    } finally { T.agentState('idle'); }
+  }
+  function liveCard(r) {
+    const el = document.createElement('div'); el.className = 'card';
+    el.innerHTML = `<div class="shot px"><img src="${esc(r.image)}" alt=""><div class="vf wide"><i></i><i></i><i></i><i></i></div></div><div class="meta"><span class="tag">live</span><h4>${esc(r.name)} <span class="dim">$${esc(r.symbol)}</span></h4>
+      <div>paired with <b>${esc(r.coll.name)}</b> · NFTs to <b>${r.policy === 'burn' ? 'the burn' : 'holders'}</b></div><div class="dim">${esc(r.mint)}</div><div class="dim">fees 80% → ${esc(short(r.vault))} · 20% → ${esc(short(r.treasury))} · locked</div>${r.buyNote ? `<div class="amber">${esc(r.buyNote)}</div>` : ''}
+      <div class="btnrow"><a class="tb pri" href="https://pump.fun/coin/${esc(r.mint)}" target="_blank" rel="noopener">open on pump.fun ↗</a><a class="tb" href="https://solscan.io/tx/${esc(r.sig)}" target="_blank" rel="noopener">transaction ↗</a><a class="tb" href="${shareUrl(r)}" target="_blank" rel="noopener">share on x ↗</a><button class="tb k" type="button" data-cmd="coin ${esc(r.mint)}">its vault and split</button></div></div>`;
+    T.node(el); setTimeout(() => el.querySelector('.vf').classList.remove('wide'), 60);
+  }
+  // the wizard's view of the launch: one spinner line per step
+  function termUI() {
+    let s = null, cur = -1; const notes = [];
+    const close = () => { if (s) s.done(`<span class="dim">${STEPS[cur]}${notes[cur] ? ' · ' + notes[cur] : ''}</span>`); s = null; };
+    return { step(i, n) { close(); cur = i; notes[i] = n ? esc(n) : ''; s = spinner(STEPS[i]); }, note(i, h) { notes[i] = h; }, skip() {}, warn(i, t) { notes[i] = `<span class="amber">${esc(t)}</span>`; },
+      end() { close(); }, fail(m) { if (s) { s.fail(m); s = null; } else print(`<span class="red">✗</span> ${m}`); } };
+  }
+  async function doLaunch(o) {
+    const ui = termUI();
+    try { const r = await launchCore(o, ui); ui.end(); liveCard(r); T.sound && T.sound.sfx('ok'); return r; }
+    catch (e) { ui.fail(esc(human(e)) + (e.unrouted ? ` ${k('route ' + e.unrouted, 'lock the fees')}` : '')); T.sound && T.sound.sfx('err'); return null; }
   }
   async function route(mint) {
     const w3 = await loadWeb3();
@@ -292,4 +336,9 @@ export function install(T) {
       s.done(`${j.receipts.length} receipts`);
       j.receipts.forEach(r => print(`${new Date(r.at).toISOString().slice(0, 16).replace('T', ' ')}  ${esc(r.kind.padEnd(6))} ${esc(r.nft_name || '')} ${r.price_sol ? r.price_sol + ' ◎' : ''} ${r.tx ? `<a class="lk" href="https://solscan.io/tx/${esc(r.tx)}" target="_blank" rel="noopener">tx ↗</a>` : ''}`));
     } });
+
+  // ---------------------------------------------------------------- the studio gets the same parts
+  const K = { W, PROVS, STEPS, mobileUA, short, sol, human, connectTo, logout, balance, launchCore, liveCard, route, generated, fromFile, pickFile, dataUrl, shareUrl, loadWeb3 };
+  T.launchKit = K;
+  import('./studio.js').then(m => m.installStudio(T, K)).catch(e => console.warn('studio', e));
 }

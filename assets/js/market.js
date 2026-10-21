@@ -13,14 +13,18 @@ export function install(T) {
   const symbols = () => popular.map(p => p.c);
   const hhmm = () => new Date().toTimeString().slice(0, 5);
 
-  T.market = { first: () => popular[0] && popular[0].c, state: () => mstate, summary: () => ({ seen: seen.size, last }), symbols };
+  T.market = { first: () => popular[0] && popular[0].c, state: () => mstate, summary: () => ({ seen: seen.size, last }), symbols, list: () => popular, nameOf: c => { const p = popular.find(x => x.c === c); return p ? p.name : ''; } };
 
   // ---------------------------------------------------------------- the market pane
-  const pane = document.querySelector('#mkt'), pstate = document.querySelector('#mktState');
+  const pane = document.querySelector('#mkt'), pstate0 = document.querySelector('#mktState');
+  const pstate = { set textContent(t) { if (!pane.hidden && pstate0) pstate0.textContent = t; } };
+  let prevFloors = {};
   function paneRender() {
     if (!popular.length) { pane.innerHTML = `<div class="mnote">${mstate === 'offline' ? 'Magic Eden didn’t answer. Retrying in a minute.' : 'Reading the market…'}</div>`; return; }
+    const vmax = Math.max(...popular.map(p => p.vol7 || 0)) || 1;
     pane.innerHTML = `<div class="mrow hd"><span>#</span><span></span><span>collection</span><span>floor ◎</span><span>listed</span></div>` + popular.slice(0, 14).map((p, i) =>
-      `<div class="mrow" data-c="${esc(p.c)}" title="scan ${esc(p.c)}"><span class="n">${String(i + 1).padStart(2, '0')}</span>${p.image ? `<img src="${esc(img(p.image, 64))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<span></span>'}<span class="nm">${esc(p.name)}</span><span class="fl">${sol(p.floor)}</span><span class="ls">${p.listed ?? '—'}</span></div>`).join('');
+      `<div class="mrow${prevFloors[p.c] != null && prevFloors[p.c] !== p.floor ? ' flash' : ''}" data-c="${esc(p.c)}" title="scan ${esc(p.c)}" style="animation-delay:${i * 30}ms"><span class="n">${String(i + 1).padStart(2, '0')}</span>${p.image ? `<img src="${esc(img(p.image, 64))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<i class="ph">${esc(p.name.slice(0, 1))}</i>`}<span class="nm">${esc(p.name)}<u style="width:${Math.max(2, (p.vol7 || 0) / vmax * 100).toFixed(1)}%"></u></span><span class="fl">${sol(p.floor)}</span><span class="ls">${p.listed ?? '—'}</span></div>`).join('');
+    prevFloors = Object.fromEntries(popular.map(p => [p.c, p.floor]));
   }
   pane.addEventListener('click', e => { const r = e.target.closest('.mrow[data-c]'); if (r) T.run('scan ' + r.dataset.c); });
   async function loadPopular() {
@@ -45,7 +49,7 @@ export function install(T) {
       <div>price <b>${sol(p.price)} ◎</b> <span class="dim">· floor ${sol(d.floor)} ◎ · ${pc(v)}</span></div>
       <div class="dim">${esc(d.name)} · weighed ${d.weighed || d.cands.length} listing${(d.weighed || 0) === 1 ? '' : 's'} within ${d.band}% of the floor</div>
       ${p.attrs && p.attrs.length ? `<div class="traits">${p.attrs.slice(0, 8).map(([a, b]) => `<span>${esc(a)} <b>${esc(b)}</b></span>`).join('')}</div>` : ''}
-      <div class="btnrow"><a class="tb" href="${ITEM(p.mint)}" target="_blank" rel="noopener">view on magic eden ↗</a>${o.more !== false ? `<button class="tb k" type="button" data-cmd="scan ${esc(d.c)}">every candidate</button>` : ''}</div></div>`;
+      <div class="btnrow"><a class="tb" href="${ITEM(p.mint)}" target="_blank" rel="noopener">view on magic eden ↗</a>${o.more !== false ? `<button class="tb k" type="button" data-cmd="scan ${esc(d.c)}">every candidate</button>` : ''}<button class="tb pri k" type="button" data-cmd="launch ${esc(d.c)}">launch a coin paired with ${esc(d.name)}</button></div></div>`;
     T.node(el); setTimeout(() => el.querySelector('.vf').classList.remove('wide'), 60);
     T.sound && T.sound.sfx('ok');
     return el;
