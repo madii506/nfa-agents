@@ -1,6 +1,6 @@
 // nfa: the way in. A white server hall: long rows of agent racks, black details, soft daylight from the ceiling and
 // a polished floor. The agent, a small white cube wearing the nfa face, leads the camera down the aisle, checks two
-// racks on the way and parks beside the operator console. The console boots; click it and the camera dives in.
+// racks on the way and parks beside the operator console. The console boots; pick a screen and the camera dives in.
 import * as THREE from '../vendor/three.module.min.js';
 import { RoundedBoxGeometry } from '../vendor/RoundedBoxGeometry.js';
 import { Reflector } from '../vendor/Reflector.js';
@@ -78,7 +78,11 @@ class Screen {
       g.font = `500 ${this.LH - 8}px ${FONT}`; y += s + 30;
     }
     for (const ln of this.lines) { run(ln, this.X, y); y += this.LH; }
-    if (this.prompt) { const x = run([['nfa ~ $ ', C.mid], [this.input || '', C.black]], this.X, y); if (blink) { g.fillStyle = C.black; g.fillRect(x + 2, y + 3, 12, this.LH - 8); } }
+    if (this.prompt) {                          // what you type comes up big, so you can read it from the hall
+      const big = !!this.input; if (big) { g.font = `700 40px ${FONT}`; y += 4; }
+      const x = run([['nfa ~ $ ', C.mid], [this.input || '', C.black]], this.X, y);
+      if (blink) { g.fillStyle = C.black; g.fillRect(x + 2, y + 3, big ? 20 : 12, big ? 38 : this.LH - 8); }
+    }
     if (this.dive > 0) {                        // the viewfinder opens outward as the camera falls in
       const k = this.dive, s = 120 + k * k * W * 1.6;
       mark(g, W / 2 - s / 2, H / 2 - s / 2, s, C.black, { eyes: k < .55 });
@@ -382,14 +386,16 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     return P.main.filter(r => r.side === SCANS[k].side).reduce((a, b) => Math.abs(b.z - SCANS[k].z) < Math.abs(a.z - SCANS[k].z) ? b : a);
   };
   SCANS.forEach((s, k) => { const r = scanRack(k); s.z = r.z; s.rack = r; });
-  const rackText = r => r.coin ? `${r.id} · $${r.coin.symbol} · ${r.coin.coll || 'agent'}` : `${r.id} · open slot · launch a coin to fill it`;
+  const rackText = r => r.coin ? `${r.id} · $${r.coin.symbol} · ${r.coin.coll || 'agent'}` : `${r.id} · open slot`;
 
   // the side screens: live data, and each one a door into the site
   const SIDE = [
-    { mesh: P.sideL, x: -1.36, ry: .46, key: 'market', label: 'crypto charts · click to open them' },
-    { mesh: P.sideR, x: 1.36, ry: -.46, key: 'launch', label: 'launch · click to launch a coin' },
+    { mesh: P.sideL, x: -1.36, ry: .46, key: 'market', label: 'crypto charts' },
+    { mesh: P.sideR, x: 1.36, ry: -.46, key: 'launch', label: 'launch a coin' },
   ].map(o => { const c = V(o.x, 1.22, -40.95), n = V(Math.sin(o.ry), 0, Math.cos(o.ry)), rt = V(Math.cos(o.ry), 0, -Math.sin(o.ry));
-    return { ...o, c, end: c.clone().add(n.clone().multiplyScalar(.17)), corners: [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => c.clone().add(rt.clone().multiplyScalar(a * .42)).add(V(0, b * .245, 0))) }; });
+    return { ...o, c, n, grp: o.mesh.parent, base: o.mesh.parent.position.clone(), pop: 0, end: c.clone().add(n.clone().multiplyScalar(.17)), corners: [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => c.clone().add(rt.clone().multiplyScalar(a * .42)).add(V(0, b * .245, 0))) }; });
+  const liveCorners = o => { o.grp.updateMatrixWorld(true); return [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => o.mesh.localToWorld(V(a * .42, b * .245, 0))); };
+  const MONC = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => V(MON.x + a * .62, MON.y + b * .37, MON.z + .02));
   const D = { prices: null, board: [], at: 0 };
   const getJ = u => fetch(u).then(r => (r.ok ? r.json() : null)).catch(() => null);
   async function feed() {
@@ -407,54 +413,79 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
   }
   const fmt = v => v == null || !isFinite(v) ? '—' : v >= 1000 ? '$' + Math.round(v).toLocaleString('en-US') : v >= 1 ? '$' + v.toFixed(2) : '$' + v.toPrecision(3);
   const pc = v => v == null || !isFinite(v) ? '' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  // the door: an arrow in a ring, filled and nudging forward while you're on the screen
+  function door(g, cx, cy, hot, now) {
+    g.lineWidth = 2; g.strokeStyle = '#0b0c0e'; g.fillStyle = hot ? '#0b0c0e' : '#ffffff';
+    g.beginPath(); g.arc(cx, cy, 19, 0, 7); g.fill(); g.stroke();
+    const dx = hot ? 1 + Math.sin(now / 150) * 3 : 0;
+    g.strokeStyle = hot ? '#ffffff' : '#0b0c0e'; g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(cx - 8 + dx, cy); g.lineTo(cx + 7 + dx, cy); g.moveTo(cx + 1 + dx, cy - 6); g.lineTo(cx + 7 + dx, cy); g.lineTo(cx + 1 + dx, cy + 6); g.stroke();
+  }
   function drawSide(i, now) {
-    const g = P.sideC[i].getContext('2d'), W = 512, H = 300, tick = Math.floor(now / 600) % 2 === 0, hot = st && st.sideHov === i;
+    const g = P.sideC[i].getContext('2d'), W = 512, H = 300, tick = Math.floor(now / 600) % 2 === 0, hot = st.sideHov === i;
+    // where your cursor sits on this screen, in its own pixels: the ray's hit, so the screen answers like a real one
+    const cu = hot && st.sideUV ? { x: st.sideUV.x * W, y: (1 - st.sideUV.y) * H } : null;
+    const red = '#c4302b', ink = '#0b0c0e';
     g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
     g.strokeStyle = '#f0f1f3'; g.lineWidth = 1; for (let x = 32; x < W; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); } for (let y = 30; y < H; y += 30) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
     g.textBaseline = 'alphabetic'; g.font = `600 16px ${FONT}`; g.fillStyle = '#8a8e95'; g.textAlign = 'left';
     g.fillText(i ? 'launch studio' : 'crypto charts', 18, 30);
-    g.textAlign = 'right'; g.fillStyle = tick ? '#0b0c0e' : '#b1b5bb'; g.fillText(i ? '● live' : '● live · 24h', W - 18, 30); g.textAlign = 'left';
+    g.textAlign = 'right'; g.fillStyle = tick ? ink : '#b1b5bb'; g.fillText(i ? '● live' : '● live · 24h', W - 18, 30); g.textAlign = 'left';
     if (i === 0) {
       // crypto charts and nothing else: SOL big with its day line, BTC and ETH with theirs. All Coinbase, all live.
-      const by = s => (D.prices || []).find(p => p.s === s), red = '#c4302b', ink = '#0b0c0e';
+      const by = s => (D.prices || []).find(p => p.s === s);
       const sol = by('SOL'), down = sol && sol.chg < 0;
       g.fillStyle = ink; g.font = `700 34px ${FONT}`; g.fillText('SOL', 18, 74);
       g.textAlign = 'right'; g.fillText(sol ? fmt(sol.price) : '—', W - 18, 74);
       g.font = `600 15px ${FONT}`; g.fillStyle = !sol ? '#b1b5bb' : down ? red : '#6b6f75';
       g.fillText(sol ? pc(sol.chg) : D.at ? 'no price right now' : 'reading coinbase…', W - 18, 96); g.textAlign = 'left';
-      const sp = sol && sol.spark && sol.spark.length > 1 ? sol.spark : null;
+      const sp = sol && sol.spark && sol.spark.length > 1 ? sol.spark : null, X0 = 20, Y0 = 106, CW = W - 40, CH = 74;
       if (sp) {
-        const end = dayLine(g, sp, 20, 108, W - 40, 60, down ? red : ink, down ? 'rgba(196,48,43,.08)' : 'rgba(11,12,14,.06)', 3);
-        g.fillStyle = down ? red : ink; g.beginPath(); g.arc(end[0], end[1], tick ? 5.5 : 4, 0, 7); g.fill();
+        const end = dayLine(g, sp, X0, Y0, CW, CH, down ? red : ink, down ? 'rgba(196,48,43,.08)' : 'rgba(11,12,14,.06)', 3);
+        if (cu && cu.y > Y0 - 16 && cu.y < Y0 + CH + 14) {
+          // a crosshair that follows you along the day, with the price at that hour
+          const n = sp.length, k = Math.max(0, Math.min(n - 1, Math.round((cu.x - X0) / CW * (n - 1)))), lo = Math.min(...sp), r = Math.max(...sp) - lo || 1;
+          const x = X0 + k / (n - 1) * CW, y = Y0 + CH - (sp[k] - lo) / r * CH, ago = n - 1 - k;
+          g.strokeStyle = '#b1b5bb'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, Y0 - 6); g.lineTo(x, Y0 + CH + 4); g.stroke();
+          g.fillStyle = '#ffffff'; g.strokeStyle = down ? red : ink; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 6.5, 0, 7); g.fill(); g.stroke();
+          const lbl = fmt(sp[k]) + '  ' + (ago ? ago + 'h ago' : 'now'); g.font = `700 15px ${FONT}`;
+          const lw = g.measureText(lbl).width + 18, lx = x + 12 + lw > W - 14 ? x - 12 - lw : x + 12, ly = y - Y0 > CH / 2 ? Y0 : Y0 + CH - 24;
+          g.fillStyle = ink; g.fillRect(lx, ly, lw, 25); g.fillStyle = '#ffffff'; g.fillText(lbl, lx + 9, ly + 18);
+        } else { g.fillStyle = down ? red : ink; g.beginPath(); g.arc(end[0], end[1], tick ? 5.5 : 4, 0, 7); g.fill(); }
       }
       ['BTC', 'ETH'].forEach((s, k) => {
-        const p = by(s), y = 200 + k * 28, dn = p && p.chg < 0;
-        g.font = `700 17px ${FONT}`; g.fillStyle = ink; g.fillText(s, 20, y);
+        const p = by(s), y = 214 + k * 30, dn = p && p.chg < 0, on = cu && cu.y > y - 21 && cu.y < y + 9 && cu.x < W - 64;
+        if (on) { g.fillStyle = ink; g.fillRect(12, y - 21, W - 82, 30); }
+        g.font = `700 17px ${FONT}`; g.fillStyle = on ? '#ffffff' : ink; g.fillText(s, 20, y);
         g.font = `500 17px ${FONT}`; g.fillText(p ? fmt(p.price) : '—', 70, y);
-        if (p) { g.fillStyle = dn ? red : '#6b6f75'; g.fillText(pc(p.chg), 214, y); }
+        if (p) { g.fillStyle = on ? '#ffffff' : dn ? red : '#6b6f75'; g.fillText(pc(p.chg), 214, y); }
         const s2 = p && p.spark && p.spark.length > 1 ? p.spark : null;
-        if (s2) dayLine(g, s2, 330, y - 17, W - 350, 18, dn ? red : ink, null, 2);
+        if (s2) dayLine(g, s2, 318, y - 17, W - 404, 18, on ? '#ffffff' : dn ? red : ink, null, 2);
       });
     } else {
-      g.fillStyle = '#0b0c0e'; g.font = `700 36px ${FONT}`; g.fillText('launch a coin', 18, 76);
+      g.fillStyle = ink; g.font = `700 36px ${FONT}`; g.fillText('launch a coin', 18, 76);
       g.font = `500 18px ${FONT}`; g.fillStyle = '#6b6f75'; g.fillText('paired with an NFT collection', 20, 104);
-      const b = D.board || [], off = b.length ? Math.floor(now / 2600) % b.length : 0;
+      // the board turns over by itself, and holds still while you look at it
+      const b = D.board || [];
+      if (!hot || st.boardOff == null) st.boardOff = b.length ? Math.floor(now / 2600) % b.length : 0;
       g.font = `500 17px ${FONT}`;
-      for (let k = 0; k < 3 && k < b.length; k++) { const c = b[(off + k) % b.length], y = 140 + k * 26; g.fillStyle = '#0b0c0e'; g.fillText(String(c.name).slice(0, 22), 20, y); g.fillStyle = '#6b6f75'; g.textAlign = 'right'; g.fillText(c.floor != null ? c.floor.toFixed(c.floor >= 1 ? 2 : 3) + ' ◎' : '—', W - 20, y); g.textAlign = 'left'; }
-      if (!b.length) { g.fillStyle = '#b1b5bb'; g.fillText('reading magic eden…', 20, 140); }
-      g.fillStyle = '#8a8e95'; g.font = `500 14px ${FONT}`; g.fillText('80% of fees → its agent · 20% → treasury', 20, 226);
+      for (let k = 0; k < 3 && k < b.length; k++) {
+        const c = b[(st.boardOff + k) % b.length], y = 142 + k * 28, on = cu && cu.y > y - 20 && cu.y < y + 8;
+        if (on) { g.fillStyle = ink; g.fillRect(12, y - 20, W - 24, 28); }
+        g.fillStyle = on ? '#ffffff' : ink; g.fillText(String(c.name).slice(0, 22), 20, y);
+        g.fillStyle = on ? '#ffffff' : '#6b6f75'; g.textAlign = 'right'; g.fillText(c.floor != null ? c.floor.toFixed(c.floor >= 1 ? 2 : 3) + ' ◎' : '—', W - 20, y); g.textAlign = 'left';
+      }
+      if (!b.length) { g.fillStyle = '#b1b5bb'; g.fillText('reading magic eden…', 20, 142); }
+      g.fillStyle = '#8a8e95'; g.font = `500 14px ${FONT}`; g.fillText('80% of fees → its agent · 20% → treasury', 20, 238);
     }
-    // the door
-    g.font = `700 16px ${FONT}`;
-    const dt = i ? 'click to launch  ›' : 'click to open the charts  ›', dw = Math.ceil(g.measureText(dt).width) + 28;
-    g.fillStyle = hot ? '#0b0c0e' : '#ffffff'; g.strokeStyle = '#0b0c0e'; g.lineWidth = 2; g.fillRect(18, 248, dw, 36); g.strokeRect(18, 248, dw, 36);
-    g.fillStyle = hot ? '#ffffff' : '#0b0c0e'; g.fillText(dt, 32, 272);
+    door(g, W - 40, 264, hot, now);
     P.sideT[i].needsUpdate = true;
   }
   const feedT = setInterval(() => { if (!document.hidden) feed(); }, 20000);
   setTimeout(feed, 300);
   const st = { phase: 'idle', t0: performance.now(), sideHov: -1, sideT: 0, sideDraw: 0, target: null, filmT: 0, wv: 0, tDive: 0, freeze: null, mx: 0, my: 0, px: 0, py: 0, blinkAt: 2, hover: false, lean: 0, done: false, skip: false,
-    hov: null, hovT: 0, userScan: null, poke: 0, ledT: 0, scrKey: '', diveAcc: 0, moved: 0 };
+    hov: null, hovT: 0, userScan: null, poke: 0, ledT: 0, scrKey: '', diveAcc: 0, moved: 0, sideUV: null, sideHotT: 0, boardOff: null, agT: 0, agentHov: false, ah: 0,
+    calm: performance.now(), cx: 0, cy: 0, rx: null, ry: null, rlook: 0, retHot: false, retBl: false, cmd: null, tl: 0 };
   const setPhase = p => { st.phase = p; onPhase && onPhase(p); };
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(9, 9);
   const onScreen = () => { ray.setFromCamera(ndc, cam); return ray.intersectObject(P.monScreen, false).length > 0; };
@@ -477,7 +508,7 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
   at(120, () => { say([['launch a coin paired with an NFT collection.', C.ink]]); });
   at(140, () => { say([['its agent spends the fees on NFTs for holders,', C.ink]]); });
   at(140, () => { say([['or for the burn. ', C.ink], ['nfa.', C.black]]); });
-  at(220, () => { say([['', C.ink]]); say([['click the screen or press enter', C.dim]]); scr.prompt = true; st.posted = true; });
+  at(220, () => { say([['', C.ink]]); scr.prompt = true; st.posted = true; });
   Q.sort((a, b) => a.ms - b.ms);
   const flush = t => { while (qi < Q.length && (st.skip || Q[qi].ms <= t)) Q[qi++].fn(); };
 
@@ -491,11 +522,20 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
   function dive() {
     if (st.phase === 'dive' || st.done) return;
     if (st.phase !== 'ready') { st.pending = true; skip(); return; }
-    st.tDive = performance.now(); st.diveFrom = cam.position.clone(); st.diveLook = (st.look || MON).clone(); setPhase('dive'); scr.prompt = false; sfx('dive');
+    st.tDive = performance.now(); st.diveFrom = cam.position.clone(); st.diveLook = (st.look || MON).clone(); setPhase('dive');
+    if (scr.input && !st.target) say([['nfa ~ $ ', C.mid], [scr.input, C.black]]); scr.prompt = false; sfx('dive');
   }
   // input: keys and wheel walk the aisle, the mouse looks around, racks and the agent answer to clicks
   const key = e => {
     if (st.done) return;
+    // once the console is up it takes typing: letters land on the big screen, enter dives in and runs them
+    if (st.phase === 'ready' && scr.prompt && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const v = scr.input || '';
+      if (e.key.length === 1 && (e.key !== ' ' || v)) { e.preventDefault(); if (v.length < 32) { scr.input = v + e.key; scr.dirty = true; sfx('key'); } return; }
+      if (e.key === 'Backspace') { e.preventDefault(); if (v) { scr.input = v.slice(0, -1); scr.dirty = true; sfx('key'); } return; }
+      if (v && e.key === 'Escape') { e.preventDefault(); scr.input = ''; scr.dirty = true; return; }
+      if (v && e.key === 'Enter') { e.preventDefault(); st.cmd = v.trim(); st.target = null; sfx('ok'); dive(); return; }
+    }
     if (e.key === 'Escape') { e.preventDefault(); if (st.phase === 'film' || st.phase === 'idle') skip(); else if (st.phase === 'ready') dive(); return; }
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (st.phase === 'idle') start(); else if (st.phase === 'film') skip(); else if (st.phase === 'ready') dive(); return; }
     const fwd = e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 's' || e.key === 'd', back = e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'w' || e.key === 'a';
@@ -513,7 +553,8 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
   let touchY = null;
   canvas.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
   canvas.addEventListener('touchmove', e => { if (touchY == null) return; const d = touchY - e.touches[0].clientY; touchY = e.touches[0].clientY; if (st.phase === 'film') st.wv = Math.max(-.08, Math.min(.12, st.wv + d * .0016)); }, { passive: true });
-  const pm = e => { st.px = e.clientX / innerWidth * 2 - 1; st.py = e.clientY / innerHeight * 2 - 1; ndc.set(st.px, -st.py); st.moved = performance.now(); };
+  const pm = e => { st.px = e.clientX / innerWidth * 2 - 1; st.py = e.clientY / innerHeight * 2 - 1; ndc.set(st.px, -st.py); st.moved = performance.now();
+    st.cx = e.clientX; st.cy = e.clientY; if (ret) { if (st.rx == null) { st.rx = st.cx; st.ry = st.cy; } ret.classList.toggle('off', e.target !== canvas || st.phase === 'dive'); } };
   addEventListener('pointermove', pm, { passive: true });
   const doorMeshes = P.doors.map(d => d.mesh);
   function pickRack() {
@@ -525,7 +566,7 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
   }
   const pickAgent = () => { ray.setFromCamera(ndc, cam); return ray.intersectObject(P.shell, false).length > 0; };
   const sideMeshes = SIDE.map(o => o.mesh);
-  const pickSide = () => { ray.setFromCamera(ndc, cam); const h = ray.intersectObjects(sideMeshes, false)[0]; return h && h.distance < 15 ? sideMeshes.indexOf(h.object) : -1; };
+  const pickSide = () => { ray.setFromCamera(ndc, cam); const h = ray.intersectObjects(sideMeshes, false)[0]; if (h && h.distance < 15) { st.sideUV = h.uv; return sideMeshes.indexOf(h.object); } return -1; };
   const click = e => {
     ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight * 2 - 1));
     if (st.phase === 'dive' || st.done) return;
@@ -536,10 +577,15 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     if (st.phase === 'idle') start(); else if (st.phase === 'film') skip(); else if (st.phase === 'ready') dive();
   };
   canvas.addEventListener('click', click);
+  // the cursor is a tiny agent: brackets that open over anything you can use, two eyes that blink with the hall's
+  const ret = !mobile && matchMedia('(pointer: fine)').matches ? document.createElement('div') : null;
+  const press = () => { if (!ret) return; ret.classList.remove('down'); void ret.offsetWidth; ret.classList.add('down'); };
+  const leave = e => { if (ret && !e.relatedTarget) ret.classList.add('off'); };
+  if (ret) { ret.className = 'ret off'; ret.innerHTML = '<span><i></i><i></i><i></i><i></i><b></b><b></b></span>'; marks.appendChild(ret); canvas.classList.add('nocur'); canvas.addEventListener('pointerdown', press); addEventListener('mouseout', leave); }
 
   // brackets over racks, drawn in the page so they stay crisp: one for the agent's scan, one for your cursor
   const mkEl = cls => { const m = document.createElement('div'); m.className = 'mk ' + cls; m.innerHTML = '<i></i><i></i><i></i><i></i><b></b>'; marks.appendChild(m); return { el: m, label: m.querySelector('b') }; };
-  const MK = mkEl('scan'), HV = mkEl('hov'), SV = mkEl('hov');
+  const MK = mkEl('scan'), HV = mkEl('hov'), SV = mkEl('hov'), GH = mkEl('ghost');
   const proj = v => { const p = v.clone().project(cam); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight, z: p.z }; };
   function showMark(M, r, k, text) { return showBox(M, r ? [V(r.face, .2, r.z - RW / 2), V(r.face, .2, r.z + RW / 2), V(r.face, RH - .05, r.z - RW / 2), V(r.face, RH - .05, r.z + RW / 2)] : null, k, text); }
   function showBox(M, corners, k, text) {
@@ -554,8 +600,8 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
 
   // LEDs: black dots that hold, blink or flicker; the scanned rack goes dark top to bottom
   const ledCol = P.ledMesh.instanceColor.array;
-  function lights(t, scanR, sweep) {
-    const L = P.leds;
+  function lights(t, scanR, sweep, hovR) {
+    const L = P.leds, hs = RH + .3 - ((t * 1.5) % 1.2) * (RH + .6);
     for (let i = 0; i < L.length; i++) {
       const l = L[i]; let on;
       if (l.kind === 0) on = Math.sin(t * .5 + l.ph) > -.6;
@@ -563,6 +609,7 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
       else on = Math.sin(t * 9.1 * l.sp + l.ph * 7) + Math.sin(t * 13.7 + l.ph * 3) > 1.1;
       let v = on ? .07 : .78;
       if (scanR != null && l.rack === scanR && Math.abs(l.y - sweep) < .25) v = .02;
+      if (l.rack === hovR) v = Math.abs(l.y - hs) < .34 ? .02 : on ? .07 : .55;
       ledCol[i * 3] = v; ledCol[i * 3 + 1] = v; ledCol[i * 3 + 2] = v * 1.02;
     }
     P.ledMesh.instanceColor.needsUpdate = true;
@@ -591,7 +638,9 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     if (st.freeze && st.freeze.film != null) st.filmT = st.freeze.film;
     else if (st.phase === 'film' || st.phase === 'ready' || st.phase === 'dive') { st.filmT = Math.max(.001, st.filmT + dt + (st.phase === 'film' ? st.wv : 0)); st.wv *= .9; }
     if (st.freeze && st.freeze.dive != null) st.tDive = now - st.freeze.dive;
-    const tAll = (now - st.t0) / 1000, ft = st.phase === 'idle' ? 0 : st.filmT;
+    const tAll0 = (now - st.t0) / 1000;
+    if (st.phase === 'idle' && !st.freeze && !window.__shots && tAll0 > 2.4) start();
+    const tAll = tAll0, ft = st.phase === 'idle' ? 0 : st.filmT;
     if (st.phase !== 'idle') flush(ft * 1000);
     // camera
     const port = portrait(), [f0, f1] = FOV(port);
@@ -607,13 +656,15 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     if (st.phase === 'ready') { const h = onScreen(); if (h !== st.hover) { st.hover = h; canvas.style.cursor = h ? 'pointer' : 'default'; } }
     st.lean += ((st.phase === 'ready' && st.hover ? 1 : 0) - st.lean) * .06;
     if (st.lean > .001) { pos.lerp(V(MON.x, MON.y + .05, MON.z + 1.4), st.lean * .18); look.lerp(MON, st.lean * .3); }
+    st.tl += ((st.phase === 'ready' && scr.input ? 1 : 0) - st.tl) * .07;          // typing pulls you up to the console
+    if (st.tl > .001) { pos.lerp(V(MON.x, MON.y + .03, MON.z + 1.05), st.tl * .45); look.lerp(MON, st.tl * .6); }
     if (st.phase === 'dive') {
       const d = clamp01((now - st.tDive) / 1900), e = easeIn(d);
       const tg = st.target;
       pos = st.diveFrom.clone().lerp(tg ? tg.end : V(MON.x, MON.y, MON.z + .2), e); look = st.diveLook.clone().lerp(tg ? tg.c : MON, Math.min(1, e * 2)); fov = f1 - e * 6;
       if (!tg) { scr.dive = clamp01((d - .25) / .75); scr.dirty = true; }
       renderer.toneMappingExposure = 1 + e * .6;
-      if (d >= 1 && !st.done && !(st.freeze && st.freeze.dive != null)) { st.done = true; cleanup(); onEnter && onEnter(st.target ? st.target.key : null); return; }
+      if (d >= 1 && !st.done && !(st.freeze && st.freeze.dive != null)) { st.done = true; cleanup(); onEnter && onEnter(st.target ? st.target.key : null, st.target ? null : st.cmd || null); return; }
     }
     if (Math.abs(cam.fov - fov) > .001) { cam.fov = fov; cam.updateProjectionMatrix(); }
     st.look = look; cam.position.copy(pos); cam.lookAt(look);
@@ -645,6 +696,8 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     P.agent.rotation.y = st.yaw + spin;
     P.agent.rotation.z = Math.sin(tAll * 1.1) * .04 - A.v * .12; P.agent.rotation.x = A.v * .14 + (pk < 1 ? Math.sin(pk * Math.PI) * .25 : 0);
     P.agent.position.y += pk < 1 ? Math.sin(pk * Math.PI) * .18 : 0;
+    st.ah += ((st.agentHov && st.phase !== 'dive' ? 1 : 0) - st.ah) * Math.min(1, dt * 8);
+    P.agent.position.y += st.ah * .06; P.agent.scale.setScalar(1 + st.ah * .08);
     P.blob.position.set(P.agent.position.x, .006, P.agent.position.z); P.blob.material.opacity = clamp01(1.3 - P.agent.position.y * .35);
     // blinks and looks, for the agent's face, the wall and the console
     if (tAll > st.blinkAt) st.blinkAt = tAll + 2.4 + Math.random() * 3.4;
@@ -654,11 +707,20 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
     let scanK = 0, scanI = -1;
     SCANS.forEach((s, i) => { const kk = smooth(s.t0 - .1, s.t0 + .3, at) * (1 - smooth(s.t1 - .3, s.t1, at)); if (kk > scanK) { scanK = kk; scanI = i; } });
     if (st.phase === 'idle' || st.skip) scanK = 0;
-    const eyeLook = scanK > 0 || usK > 0 ? 0 : lookX * .7;
-    P.faceEyes.forEach((e, i) => { e.scale.y = 1 - bl * .86; e.position.x = (i ? .0356 : -.0356) + eyeLook * .015; });
+    const eyeLook = scanK > 0 || usK > 0 || st.ah > .5 ? 0 : st.sideHov >= 0 ? (st.sideHov ? 1 : -1) * .9 : lookX * .7;
+    P.faceEyes.forEach((e, i) => { e.scale.y = (1 - bl * .86) * (1 + st.ah * .22); e.position.x = (i ? .0356 : -.0356) + eyeLook * .015; });
     const wl = Math.max(-1, Math.min(1, cam.position.x * .2 + lookX * .5));
     P.wallEyes.forEach((e, i) => { e.scale.y = 1 - bl * .86; e.position.x = (i ? .165 : -.165) + wl * .07; });
     P.wallDot.visible = Math.floor(tAll * 1.6) % 2 === 0;
+    if (ret && st.rx != null) {
+      const f = Math.min(1, dt * 24); st.rx += (st.cx - st.rx) * f; st.ry += (st.cy - st.ry) * f;
+      st.rlook += (Math.max(-2.4, Math.min(2.4, (st.cx - st.rx) * .09)) - st.rlook) * .25;
+      ret.style.transform = `translate3d(${st.rx.toFixed(1)}px,${st.ry.toFixed(1)}px,0)`; ret.style.setProperty('--lx', st.rlook.toFixed(2) + 'px');
+      const h = st.phase !== 'dive' && (st.sideHov >= 0 || !!st.hov || st.agentHov || (st.phase === 'ready' && st.hover));
+      if (h !== st.retHot) { st.retHot = h; ret.classList.toggle('hot', h); }
+      const b = bl > .5; if (b !== st.retBl) { st.retBl = b; ret.classList.toggle('blink', b); }
+      if (st.phase === 'dive') ret.classList.add('off');
+    }
     const sk = `${(bl > .5 ? 1 : 0)}:${Math.round(lookX * 2)}`; if (sk !== st.scrKey && scr.logo >= 1) { st.scrKey = sk; scr.eye = bl > .5 ? 1 : 0; scr.lookv = Math.round(lookX * 2) / 4; scr.dirty = true; }
     // scans: the film's two, or the one you asked for
     let sR = null, sK = 0, sText = '';
@@ -679,22 +741,36 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
       st.hovT = now; const r = pickRack();
       if (r !== st.hov) { st.hov = r; canvas.style.cursor = r ? 'pointer' : 'default'; if (r) sfx('tick'); }
     }
-    if (!mobile && st.phase !== 'dive' && st.phase !== 'idle' && now - st.sideT > 70 && now - st.moved < 1500) {
+    if (!mobile && st.phase !== 'dive' && st.phase !== 'idle' && now - st.sideT > 40 && now - st.moved < 1500) {
       st.sideT = now; const si = pickSide();
-      if (si !== st.sideHov) { st.sideHov = si; if (si >= 0) sfx('tick'); drawSide(0, now); drawSide(1, now); }
+      if (si !== st.sideHov) { const was = st.sideHov; st.sideHov = si; if (si >= 0) sfx('tick'); if (was >= 0) drawSide(was, now); }
     }
+    if (!mobile && st.phase !== 'dive' && now - st.agT > 60 && now - st.moved < 1500) { st.agT = now; const a = pickAgent(); if (a && !st.agentHov) sfx('tick'); st.agentHov = a; }
     if (st.phase === 'dive' || st.phase === 'idle') st.sideHov = -1;
-    canvas.style.cursor = st.sideHov >= 0 || st.hov || (st.phase === 'ready' && st.hover) ? 'pointer' : 'default';
-    showBox(SV, st.sideHov >= 0 ? SIDE[st.sideHov].corners : null, 1, st.sideHov >= 0 ? SIDE[st.sideHov].label : '');
+    // the screen under the cursor leans out to meet you and draws itself around your cursor
+    SIDE.forEach((o, i) => {
+      const want = st.sideHov === i ? 1 : 0; if (Math.abs(want - o.pop) < .001 && !want) return;
+      o.pop += (want - o.pop) * Math.min(1, dt * 9);
+      o.grp.position.copy(o.base).addScaledVector(o.n, o.pop * .06); o.grp.position.y += o.pop * .02; o.grp.rotation.y = o.ry * (1 - o.pop * .3);
+    });
+    if (st.sideHov >= 0 && now - st.sideHotT > 45) { st.sideHotT = now; drawSide(st.sideHov, now); }
+    const hotNow = st.phase !== 'dive' && (st.sideHov >= 0 || !!st.hov || st.agentHov || (st.phase === 'ready' && st.hover));
+    canvas.style.cursor = hotNow ? 'pointer' : 'default';
+    showBox(SV, st.sideHov >= 0 ? liveCorners(SIDE[st.sideHov]) : null, 1, st.sideHov >= 0 ? SIDE[st.sideHov].label : '');
+    // nothing under the cursor for a while: a faint bracket walks the three screens, left, console, right
+    if (st.phase !== 'ready' || hotNow || scr.input) st.calm = now;
+    const q = now - st.calm;
+    if (q > 2400) { const sl = Math.floor((q - 2400) / 720) % 4, ph = ((q - 2400) % 720) / 720, cs = sl === 0 ? SIDE[0].corners : sl === 1 ? MONC : sl === 2 ? SIDE[1].corners : null; showBox(GH, cs, cs ? Math.sin(ph * Math.PI) * .85 : 0, ''); }
+    else showBox(GH, null, 0);
     if (now - st.sideDraw > 600 && st.phase !== 'dive' && cam.position.z < -28) { st.sideDraw = now; drawSide(0, now); drawSide(1, now); }
     if (st.phase === 'ready' || st.phase === 'dive') st.hov = null;
-    if (st.hov && st.hov !== sR) showMark(HV, st.hov, 1, rackText(st.hov) + ' · click to scan'); else showMark(HV, null, 0);
-    if (now - st.ledT > 50 || window.__shots) { st.ledT = now; lights(tAll, st.scanRack, st.sweep); }
+    if (st.hov && st.hov !== sR) showMark(HV, st.hov, 1, rackText(st.hov)); else showMark(HV, null, 0);
+    if (now - st.ledT > 50 || window.__shots) { st.ledT = now; lights(tAll, st.scanRack, st.sweep, st.hov ? P.racks.indexOf(st.hov) : -1); }
     P.dustU.value = tAll;
     scr.draw(now);
     renderer.render(scene, cam);
   }
-  function cleanup() { clearInterval(feedT); removeEventListener('keydown', key); removeEventListener('resize', resize); removeEventListener('pointermove', pm); canvas.removeEventListener('click', click); canvas.removeEventListener('wheel', wheel); setTimeout(() => { renderer.dispose(); }, 1500); }
+  function cleanup() { if (ret) { removeEventListener('mouseout', leave); setTimeout(() => ret.remove(), 400); } clearInterval(feedT); removeEventListener('keydown', key); removeEventListener('resize', resize); removeEventListener('pointermove', pm); canvas.removeEventListener('click', click); canvas.removeEventListener('wheel', wheel); setTimeout(() => { renderer.dispose(); }, 1500); }
   if (!window.__shots) requestAnimationFrame(frame);
   return api;
 }

@@ -146,7 +146,7 @@ is nfa part of pump.fun, magic eden or tensor?
 const DIRS = { '/': ['readme.md', 'custody.md', 'fees.md', 'agent.md', 'draw.md', 'faq.md', 'links.txt', 'coins/'] };
 
 // ---------------------------------------------------------------- the terminal
-export function start({ sound, from, coins: initialCoins = [], mobile, solo }) {
+export function start({ sound, from, coins: initialCoins = [], mobile, solo, cmd }) {
   const out = $('#out'), input = $('#cmd'), typed = $('#typed'), after = $('#after'), ghost = $('#ghost'), cur = $('#cur'), ps1 = $('#ps1');
   const app = $('#app'), alog = $('#alog'), faceEl = $('#face'), astat = $('#astat');
   const cmds = new Map(), alias = new Map();
@@ -600,7 +600,8 @@ export function start({ sound, from, coins: initialCoins = [], mobile, solo }) {
     T.ready = true;
     // links into the shell: ?coin=<mint> opens a coin (?launch and ?markets are rooms of their own, see main.js)
     { const c = new URLSearchParams(location.search).get('coin');
-      if (c && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(c)) run(T.coins.some(x => x.mint === c) ? 'coin ' + c : 'pump ' + c); }
+      if (c && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(c)) run(T.coins.some(x => x.mint === c) ? 'coin ' + c : 'pump ' + c);
+      else if (cmd) run(String(cmd).slice(0, 64)); }
     if (!mobile) input.focus({ preventScroll: true });
     if (sound) sound.sfx('ok');
   })();

@@ -35,7 +35,7 @@ sound.onChange(s => { isnd.textContent = s.muted ? 'sound off' : 'sound on'; });
 isnd.addEventListener('click', e => { e.stopPropagation(); sound.toggle(); });
 
 let entered = false;
-async function enter(how, go) {
+async function enter(how, go, cmd) {
   if (entered) return; entered = true;
   sound.scene('term');
   if (how === 'dive') $('#flash').classList.add('on');
@@ -53,7 +53,7 @@ async function enter(how, go) {
     return;
   }
   app.hidden = false; app.classList.add('boot'); leave();
-  T.start({ sound, from: how, coins, mobile });
+  T.start({ sound, from: how, coins, mobile, cmd });             // cmd: whatever you typed on the hall's console
 }
 function webgl() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } }
 
@@ -71,7 +71,7 @@ async function boot() {
     hall = await hallMod.run({
       canvas: $('#hall'), marks: $('#marks'), mobile, sound, coins: coins.map(c => ({ symbol: c.symbol, coll: c.coll_name || c.collection })),
       onPhase: ph => { intro.classList.remove('idle', 'film', 'ready', 'dive'); intro.classList.add(ph); },
-      onEnter: go => enter('dive', go),
+      onEnter: (go, cmd) => enter('dive', go, cmd),
     });
   } catch (e) { console.warn('hall', e); load.classList.add('done'); return enter('skip'); }
   p(100); setTimeout(() => load.classList.add('done'), 200); requestAnimationFrame(() => intro.classList.add('live'));
