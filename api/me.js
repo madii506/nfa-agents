@@ -39,6 +39,11 @@ const WATCH = [
     ['y00ts', 'y00ts'], ['claynosaurz_popkins', 'Popkins'], ['nokiamon', 'Nokiamon'], ['bitbots', 'BitBots'], ['madlads_ow', 'Mad Lads OW'], ['goblins', 'Goblins'],
     ['solana_bears', 'Solana Bears'], ['sol_bears', 'Sol Bears'], ['zeta_wizards', 'Zeta Wizards'], ['marinade_chefs', 'Marinade Chefs'], ['drippies', 'Drippies'], ['bozo_collective', 'Bozo Collective'],
     ['the_lowlifes', 'The Lowlifes'], ['player_2', 'Player 2'], ['solana_money_boys', 'Solana Money Boys'], ['bitmatrix', 'Bitmatrix'], ['the_infected_mob', 'The Infected Mob'], ['gothic_degens', 'Gothic Degens'],
+    ['solana_monkette_business', 'Solana Monkette Business'], ['solarians', 'Solarians'], ['degenerate_ape_kingdom', 'Degenerate Ape Kingdom'], ['shin_sengoku', 'Shin Sengoku'],
+    ['bubblegoose_ballers', 'Bubblegoose Ballers'], ['sea_shanties', 'Sea Shanties'], ['solstein', 'Solstein'], ['angomon', 'Angomon'], ['tombstoned', 'Tombstoned'], ['sorcies', 'Sorcies'],
+    ['skeleton_crew_skulls', 'Skeleton Crew'], ['brohalla', 'Brohalla'], ['the_dapper_ducks', 'Dapper Ducks'], ['lotus_gang', 'Lotus Gang'], ['solpunks', 'SolPunks'], ['monkedao', 'MonkeDAO'],
+    ['cryptoon', 'Cryptoon'], ['ghostkidz', 'GhostKidz'], ['playground_waves', 'Playground Waves'], ['the_vanguards', 'The Vanguards'], ['enviro', 'Enviro'], ['famous_fox_dens', 'Fox Dens'],
+    ['clayno_club', 'Clayno Club'], ['madhouse', 'Madhouse'], ['taiyo_pilots', 'Taiyo Pilots'], ['okay_bears_yearbook', 'Okay Bears Yearbook'], ['gen_2_aurorians', 'Aurorians Gen 2'], ['blob_city', 'Blob City'],
   ].map(([c, n]) => [c, n, null])];
 
 async function me(path, ttl) {
@@ -85,24 +90,28 @@ function pickFrom(floor, ls) {
 }
 
 
-// a picture that actually loads: an image content type and a 200 or 206, inside a few seconds
+// a picture that actually loads: a 200 or 206 with an image (or plain binary) body, inside eight seconds. Error pages
+// (html, json) don't count.
 async function loads(url) {
-  if (!url || !/^https:\/\//.test(url) || L.MOCK) return !!url && !L.MOCK ? false : !!url;
-  try { const r = await fetch(url, { headers: { range: 'bytes=0-2047', 'user-agent': L.UA }, signal: AbortSignal.timeout(8000) }); try { r.body && r.body.cancel && await r.body.cancel(); } catch {} return (r.status === 200 || r.status === 206) && /^image\//.test(r.headers.get('content-type') || ''); }
-  catch { return false; }
+  if (!url || !/^https:\/\//.test(url)) return false;
+  if (L.MOCK) return true;
+  try {
+    const r = await fetch(url, { headers: { range: 'bytes=0-2047', 'user-agent': L.UA, accept: 'image/*,*/*;q=0.8' }, signal: AbortSignal.timeout(8000) });
+    try { r.body && r.body.cancel && await r.body.cancel(); } catch {}
+    const ct = (r.headers.get('content-type') || '').toLowerCase();
+    return (r.status === 200 || r.status === 206) && !/text\/html|json|xml/.test(ct);
+  } catch { return false; }
 }
 async function pictureFor(c, given) {
   const tries = [];
   if (given) tries.push(given);
   const info = await me(`/collections/${c}`, 86400000).catch(() => null);
   if (info && info.image) tries.push(info.image);
-  for (const u of tries) if (await loads(u)) return { image: u, name: info && info.name };
+  for (const u of tries) if (await loads(u)) return { image: u, ok: true, name: info && info.name };
   const ls = await listings(c).catch(() => []);
-  for (const l of ls.slice(0, 4)) if (l.img && await loads(l.img)) return { image: l.img, name: info && info.name };
-  // nothing answered in time from here: keep the best candidate anyway, the page's own fallbacks (resizer, Magic Eden's
-  // image CDN, the file itself) usually still get it on screen
-  const any = tries[0] || (ls.find(l => l.img) || {}).img || null;
-  return { image: any, name: info && info.name };
+  for (const l of ls.slice(0, 5)) if (l.img && await loads(l.img)) return { image: l.img, ok: true, name: info && info.name };
+  // nothing loads: the collection stays off the board (its pictures are on hosts that no longer answer), checked again tomorrow
+  return { image: tries[0] || (ls.find(l => l.img) || {}).img || null, ok: false, name: info && info.name };
 }
 const rowOut = r => ({ c: r.symbol, name: r.name, image: r.image, floor: r.floor, listed: r.listed, avg24: r.avg24, vol7: r.vol7 });
 async function boardDb() {
@@ -110,22 +119,22 @@ async function boardDb() {
   const rows = await L.q('SELECT * FROM nfa_colls');
   const by = new Map(rows.map(r => [r.symbol, r])), now = Date.now(), age = r => now - Date.parse(r.updated_at);
   const due = WATCH.map(([c, name, img], i) => ({ c, name, img, i, r: by.get(c) }))
-    .filter(x => !x.r || (x.r.ok ? age(x.r) > (x.r.image ? 10 * 60e3 : 2 * 60e3) : age(x.r) > 24 * 3600e3))
+    .filter(x => !x.r || (!x.r.ok ? age(x.r) > 24 * 3600e3 : x.r.img_ok == null ? age(x.r) > 60e3 : x.r.img_ok === false ? age(x.r) > 12 * 3600e3 : age(x.r) > 10 * 60e3))
     .sort((a, b) => (a.r ? 1 : 0) - (b.r ? 1 : 0) || (a.r && b.r ? age(b.r) - age(a.r) : a.i - b.i)).slice(0, 8);
   await L.pool(due, 2, async x => {
     try {
       const s = await me(`/collections/${x.c}/stats`, 120000);
       if (!s || s.floorPrice == null) throw Object.assign(new Error('empty'), { code: 404 });
-      let name = (x.r && x.r.name) || x.name || x.c, image = x.r && x.r.image;
-      if (!image || !x.r || !x.r.img_at) { const p = await pictureFor(x.c, x.img); image = p.image; if (p.name) name = L.clean(p.name, 64); }
-      await L.q(`INSERT INTO nfa_colls (symbol, name, image, floor, listed, avg24, vol7, ok, img_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,true,now(),now())
-        ON CONFLICT (symbol) DO UPDATE SET name=EXCLUDED.name, image=EXCLUDED.image, floor=EXCLUDED.floor, listed=EXCLUDED.listed, avg24=EXCLUDED.avg24, vol7=EXCLUDED.vol7, ok=true, img_at=COALESCE(nfa_colls.img_at, now()), updated_at=now()`,
-        [x.c, name, image, lam(s.floorPrice), s.listedCount ?? null, lam(s.avgPrice24hr), lam(s.volume7d)]);
+      let name = (x.r && x.r.name) || x.name || x.c, image = x.r && x.r.image, imgOk = x.r ? x.r.img_ok : null;
+      if (!image || !x.r || imgOk !== true) { const p = await pictureFor(x.c, x.img); image = p.image; imgOk = p.ok; if (p.name) name = L.clean(p.name, 64); }
+      await L.q(`INSERT INTO nfa_colls (symbol, name, image, floor, listed, avg24, vol7, ok, img_ok, img_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8,now(),now())
+        ON CONFLICT (symbol) DO UPDATE SET name=EXCLUDED.name, image=EXCLUDED.image, floor=EXCLUDED.floor, listed=EXCLUDED.listed, avg24=EXCLUDED.avg24, vol7=EXCLUDED.vol7, ok=true, img_ok=EXCLUDED.img_ok, img_at=now(), updated_at=now()`,
+        [x.c, name, image, lam(s.floorPrice), s.listedCount ?? null, lam(s.avgPrice24hr), lam(s.volume7d), imgOk]);
     } catch (e) {
       if (e.code === 404) await L.q(`INSERT INTO nfa_colls (symbol, ok, updated_at) VALUES ($1,false,now()) ON CONFLICT (symbol) DO UPDATE SET ok=false, updated_at=now()`, [x.c]).catch(() => {});
     }
   });
-  const fresh = await L.q('SELECT * FROM nfa_colls WHERE ok AND floor IS NOT NULL');
+  const fresh = await L.q('SELECT * FROM nfa_colls WHERE ok AND floor IS NOT NULL AND image IS NOT NULL AND img_ok IS NOT FALSE');
   const keep = new Set(WATCH.map(w => w[0]));
   return fresh.filter(r => keep.has(r.symbol)).map(rowOut).sort((a, b) => (b.vol7 || 0) - (a.vol7 || 0));
 }

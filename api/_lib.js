@@ -148,6 +148,7 @@ function ready() {
         price_sol float8, tx text, to_wallet text, note text, at timestamptz NOT NULL DEFAULT now())`,
       `CREATE INDEX IF NOT EXISTS nfa_receipts_mint ON nfa_receipts(mint, id DESC)`,
       `CREATE TABLE IF NOT EXISTS nfa_colls (symbol text PRIMARY KEY, name text, image text, floor float8, listed int, avg24 float8, vol7 float8, ok boolean NOT NULL DEFAULT true, img_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now())`,
+      `ALTER TABLE nfa_colls ADD COLUMN IF NOT EXISTS img_ok boolean`,
       `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS twitter text`,
       `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS telegram text`,
       `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS website text`,
