@@ -773,3 +773,8 @@ body.stu-open .vfc { z-index: 95; }
 @media (prefers-reduced-motion: reduce) { .stu-v.on, .stu-tile, .stu-nft, .stu-rev li, .stu-ps, .stu-live, .stu-pair .w, .stu-pair .w::after, .stu-pc.on .nft, .stu-pc.on .dash { animation: none !important; } }
 a.tb { text-decoration: none; display: inline-flex; align-items: center; }
 .side { grid-template-rows: minmax(0, .74fr) minmax(0, 1.26fr); }
+
+/* no loader: the hall fades in as soon as its first frame is drawn */
+.intro canvas { opacity: 0; transition: opacity 1s ease; }
+.intro.live canvas { opacity: 1; }
+.iload { display: none; }
