@@ -868,3 +868,25 @@ body.solo-launch .app > :not(.stu) { visibility: hidden; }
   .mx-tile.on { box-shadow: inset 0 -3px 0 var(--hi); }
 }
 @media (prefers-reduced-motion: reduce) { .mx-tile, .mx-focus.swap .mx-h, .mx-focus.swap .mx-c, .mx-tile.up .v b, .mx-tile.dn .v b { animation: none; } .mx-load::after { animation: none; } }
+
+/* the intro speaks with the cursor, not with words: a tiny agent for a pointer */
+@media (pointer: fine) { .intro canvas.nocur { cursor: none !important; } }
+.ret { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 3; will-change: transform; transition: opacity .18s ease; }
+.ret.off { opacity: 0; }
+.ret span { position: absolute; left: -13px; top: -13px; width: 26px; height: 26px; }
+.ret.down span { animation: retdown .34s cubic-bezier(.2,.8,.2,1); }
+.ret i { position: absolute; width: 8px; height: 8px; border: 2px solid #0b0c0e; transition: transform .24s cubic-bezier(.2,.8,.2,1); }
+.ret i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 4px; }
+.ret i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 4px; }
+.ret i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 4px; }
+.ret i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 4px; }
+.ret b { position: absolute; top: 8.5px; width: 3px; height: 9px; border-radius: 2px; background: #0b0c0e; transform: translateX(var(--lx, 0px)); transition: height .08s ease, top .08s ease; }
+.ret b:nth-of-type(1) { left: 8.5px; } .ret b:nth-of-type(2) { left: 14.5px; }
+.ret.hot i:nth-child(1) { transform: translate(-6px, -6px); } .ret.hot i:nth-child(2) { transform: translate(6px, -6px); }
+.ret.hot i:nth-child(3) { transform: translate(-6px, 6px); } .ret.hot i:nth-child(4) { transform: translate(6px, 6px); }
+.ret.hot b { height: 11px; top: 7.5px; }
+.ret.blink b { height: 2px; top: 12px; }
+@keyframes retdown { 0% { transform: scale(1); } 35% { transform: scale(.7); } 100% { transform: scale(1); } }
+.mk b:empty { display: none; }
+.mk.ghost i { border-color: rgba(11,12,14,.42); border-width: 1.5px; }
+@media (prefers-reduced-motion: reduce) { .ret.down span { animation: none; } }
