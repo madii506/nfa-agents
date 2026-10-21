@@ -98,7 +98,8 @@ const isAddr = s => typeof s === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.tes
 
 // ---------- the agent vaults: one per coin, derived from the studio's public address ----------
 const SYSTEM = '11111111111111111111111111111111';
-const STUDIO = (process.env.STUDIO_WALLET || '').trim();
+// the nfa studio's public address (no key here): the 20% treasury, and the base each coin's agent vault is derived from
+const STUDIO = (process.env.STUDIO_WALLET ?? '7GSpXajPvqKqepNG8wYNdEaWzHuV1wdK1NBH26vAf6fm').trim();
 const TREASURY = (process.env.TREASURY_WALLET || '').trim() || STUDIO;
 const PREFUND = 0.001;                        // SOL the launcher puts in, so the vault exists before fees arrive
 function seedAddress(base, seed, owner = SYSTEM) {   // = web3.PublicKey.createWithSeed(base, seed, owner)
@@ -145,6 +146,9 @@ function ready() {
       `CREATE TABLE IF NOT EXISTS nfa_receipts (id bigserial PRIMARY KEY, mint text NOT NULL, kind text NOT NULL, nft_mint text, nft_name text, nft_image text,
         price_sol float8, tx text, to_wallet text, note text, at timestamptz NOT NULL DEFAULT now())`,
       `CREATE INDEX IF NOT EXISTS nfa_receipts_mint ON nfa_receipts(mint, id DESC)`,
+      `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS twitter text`,
+      `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS telegram text`,
+      `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS website text`,
     ]) await q(st);
   })().catch(e => { made = null; throw e; });
   return made;

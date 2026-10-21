@@ -5,9 +5,25 @@ const L = require('./_lib');
 const ME = 'https://api-mainnet.magiceden.dev/v2';
 const symOk = s => typeof s === 'string' && /^[a-z0-9][a-z0-9_\-]{1,63}$/i.test(s);
 const lam = v => (v == null || !isFinite(Number(v)) ? null : Number(v) / 1e9);
-const WATCH = [['mad_lads', 'Mad Lads'], ['solana_monkey_business', 'Solana Monkey Business'], ['claynosaurz', 'Claynosaurz'], ['degods', 'DeGods'], ['famous_fox_federation', 'Famous Fox Federation'],
-  ['okay_bears', 'Okay Bears'], ['collector_crypt', 'Collector Crypt'], ['retardio_cousins', 'Retardio Cousins'], ['smb_gen3', 'SMB Gen3'], ['tensorians', 'Tensorians'], ['aurory', 'Aurory'],
-  ['cets_on_creck', 'Cets on Creck'], ['sharx', 'Sharx'], ['sensei', 'Sensei'], ['froganas', 'Froganas'], ['portals', 'Portals'], ['lifinity_flares', 'Lifinity Flares']];
+// [symbol, name, a picture from one of its NFTs for the board]
+const WATCH = [
+  ['mad_lads', 'Mad Lads', 'https://madlads.s3.us-west-2.amazonaws.com/images/8376.png'],
+  ['solana_monkey_business', 'Solana Monkey Business', 'https://arweave.net/GCqW0ZszLZMCohvYunRQ0yIrJUAY31SEvW4W7TOwl0o'],
+  ['claynosaurz', 'Claynosaurz', 'https://storage.claynosaurz.com/claynosaurz/animated/3370'],
+  ['degods', 'DeGods', 'https://metadata.degods.com/g/5794-dead-rm.png'],
+  ['famous_fox_federation', 'Famous Fox Federation', 'https://famousfoxes.com/hd/9791.png'],
+  ['okay_bears', 'Okay Bears', 'https://arweave.net/8s9YTtgompdqQzjwOBQ0KHK3_O3eMcpmJxOZ319jd5g'],
+  ['collector_crypt', 'Collector Crypt', 'https://arweave.net/TTG7dbTOlV7qGF7uMfcuVOyaJIqUl9WdmBjHPAKhE58'],
+  ['retardio_cousins', 'Retardio Cousins', 'https://d2nci21ylekf89.cloudfront.net/DUX8SZXLKigc84BBUcYjA7PuKe2SFwXFtQVgwmBsaXKm/1/761fe73c0a1e052af7fef4f034fa3d194d114f22ac27c7f3024d1537f9e63d55.png'],
+  ['smb_gen3', 'SMB Gen3', 'https://gateway.irys.xyz/2WjGRXN2PoxVifDH4L3d6xUbmxWBP2rzhdhFCFy9bY2H'],
+  ['tensorians', 'Tensorians', 'https://prod-tensor-creators-s3.s3.us-east-1.amazonaws.com/drop-metadata/24f27171-430f-42ca-b442-6a75a8daadad/images/2789.png'],
+  ['aurory', 'Aurory', 'https://aurorians.cdn.aurory.io/aurorians-v2/current/images/full/4130.png'],
+  ['cets_on_creck', 'Cets on Creck', 'https://cets.mypinata.cloud/ipfs/bafybeigptz7nal26d2xigwjxoek5bqfgv2oy45mdrihbyhzabdjddsirvu'],
+  ['sharx', 'Sharx', 'https://arweave.net/lceIUDhwv6YORNsLzkR3asvLyta0Kv74yYwW9adWRS0?ext=png'],
+  ['sensei', 'Sensei', 'https://sensei.launchifi.xyz/gif/2256.gif'],
+  ['froganas', 'Froganas', 'https://arweave.net/_xqWgP1gSJuqA7uHY5is-SPwO0Uaoh-IQOdJ-gUCqls?ext=png'],
+  ['portals', 'Portals', 'https://arweave.net/JPmNtGEUildq45Xhn1RO6XTMbTlaBhTap03za_rbMAY'],
+  ['lifinity_flares', 'Lifinity Flares', 'https://www.arweave.net/c9gKlsJaSOYtNLaKhcRor4E9If-nk08X7ALKx-PWSuA?ext=webp']];
 
 async function me(path, ttl) {
   return L.remember('me:' + path, ttl, async () => {
@@ -60,11 +76,10 @@ module.exports = async (req, res) => {
       // Magic Eden's trending endpoint went quiet, so the market board is a watchlist of major Solana collections,
       // each read live and sorted by seven-day volume.
       const list = await L.remember('watch', 600000, async () => {
-        const out = WATCH.map(([c, name]) => ({ c, name, image: null, floor: null, listed: null, avg24: null, vol7: null }));
+        const out = WATCH.map(([c, name, image]) => ({ c, name, image, floor: null, listed: null, avg24: null, vol7: null }));
         await L.pool(out, 2, async o => {
           const s = await me(`/collections/${o.c}/stats`, 300000);
           Object.assign(o, { floor: lam(s.floorPrice), listed: s.listedCount ?? null, avg24: lam(s.avgPrice24hr), vol7: lam(s.volume7d) });
-          const i = await me(`/collections/${o.c}`, 86400000).catch(() => null); if (i && i.image) o.image = i.image;
         });
         const good = out.filter(o => o.floor != null);
         if (!good.length) throw new Error('Magic Eden didn’t answer.');

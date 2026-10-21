@@ -3,6 +3,13 @@
 // landed but its routing didn't). Nothing here can sign: the server has no key.
 const L = require('./_lib');
 module.exports = async (req, res) => {
+  if (req.method === 'GET') {
+    // GET /api/build?quote=<lamports>: what a first buy of that size gets on a fresh curve (pump.fun's own math)
+    if (L.limited('quote:' + L.ip(req), 150, 60000)) return L.send(res, 200, { ok: false, error: 'Too many quotes. Wait a moment.' });
+    const lam = Math.max(0, Math.min(5e9, Math.round(Number(L.query(req).quote) || 0)));
+    try { const P = require('./_pump'); return L.send(res, 200, { ok: true, lamports: lam, ...(await P.quote({ rpcUrl: L.RPC_URL(), mock: L.MOCK, lamports: lam })) }, L.CACHE(30)); }
+    catch (e) { return L.send(res, 200, { ok: false, error: 'pump.fun’s curve didn’t load: ' + String(e && e.message || e).slice(0, 120) }); }
+  }
   if (req.method !== 'POST') return L.send(res, 405, { ok: false, error: 'POST only.' });
   if (L.limited('build:' + L.ip(req), 30, 600000)) return L.send(res, 200, { ok: false, error: 'Too many tries. Wait a few minutes.' });
   if (!L.dbReady()) return L.send(res, 200, { ok: false, error: 'nfa’s records are offline.' });

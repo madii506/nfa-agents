@@ -50,6 +50,21 @@ async function buildLaunch(o) {
     sharingConfig: feeSharingConfigPda(M).toBase58(), bondingCurve: bondingCurvePda(M).toBase58(), creatorVault: creatorVaultPda(feeSharingConfigPda(M)).toBase58() };
 }
 
+// a first buy, priced on a fresh pump.fun curve from the live Global account: tokens out, share of supply, and where
+// the curve and the market cap land afterwards. Read-only.
+async function quote({ rpcUrl, mock, lamports }) {
+  const { global, feeConfig } = await chainState(rpcUrl, mock);
+  const fresh = newBondingCurve(global, NATIVE_MINT), n = x => Number(x.toString());
+  const vS = n(global.initialVirtualSolReserves), vT = n(global.initialVirtualTokenReserves), rT = n(global.initialRealTokenReserves), sup = n(global.tokenTotalSupply);
+  const out = { supply: sup, decimals: 6, startMcapSol: vS / vT * sup / 1e9, realTokens: rT, tokens: 0, pct: 0, progress: 0, afterMcapSol: vS / vT * sup / 1e9 };
+  if (lamports > 0) {
+    const amt = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: global.tokenTotalSupply, bondingCurve: fresh, amount: new BN(String(lamports)), quoteMint: NATIVE_MINT });
+    const t = n(amt), vT2 = vT - t, vS2 = vS * vT / vT2;
+    Object.assign(out, { tokens: t, pct: t / sup, progress: Math.min(1, t / rT), afterMcapSol: vS2 / vT2 * sup / 1e9 });
+  }
+  return out;
+}
+
 // what the chain says about a coin: does it exist, are its fees routed and locked, and what is waiting in pump's
 // creator vault. `getAccounts(addresses)` returns raw accounts ({data: Buffer, lamports} or null) in order.
 const MOCK = process.env.NI_MOCK ? require(process.env.NI_MOCK) : null;
@@ -68,6 +83,18 @@ async function routing(mint, getAccounts, extra = []) {
   };
 }
 
+// one pump.fun coin's bonding curve, straight from the chain: market cap in SOL, how full the curve is, graduated or not
+async function curveOf(mint, getAccounts, rpcUrl, mock) {
+  const M = new PublicKey(mint);
+  const [info] = await getAccounts([bondingCurvePda(M).toBase58()]);
+  if (!info) return { exists: false };
+  const bc = PUMP_SDK.decodeBondingCurve(info), n = x => (x == null ? 0 : Number(x.toString()));
+  let initReal = 793100000000000; try { const { global } = await chainState(rpcUrl, mock); initReal = n(global.initialRealTokenReserves) || initReal; } catch {}
+  const vq = bc.virtualQuoteReserves || bc.virtualSolReserves, vt = bc.virtualTokenReserves, rt = n(bc.realTokenReserves);
+  return { exists: true, complete: !!bc.complete, creator: bc.creator.toBase58(), mcapSol: vt && !vt.isZero() ? Number(vq.mul(bc.tokenTotalSupply).div(vt).toString()) / 1e9 : null,
+    progress: bc.complete ? 1 : Math.max(0, Math.min(1, 1 - rt / initReal)), realSol: n(bc.realQuoteReserves || bc.realSolReserves) / 1e9 };
+}
+
 // the permissionless push: anyone can pay a coin's creator vault out to its shareholders (the clicker pays the tx fee)
 async function buildFeed({ mint, payer, blockhash, getAccounts }) {
   if (MOCK) { const tx = v0(new PublicKey(payer), [SystemProgram.transfer({ fromPubkey: new PublicKey(payer), toPubkey: new PublicKey(payer), lamports: 0 })], blockhash); return { tx: Buffer.from(tx.serialize()).toString('base64') }; }
@@ -79,4 +106,4 @@ async function buildFeed({ mint, payer, blockhash, getAccounts }) {
   return { tx: Buffer.from(v0(P, [...cuIx(150000, 100000), ix], blockhash).serialize()).toString('base64') };
 }
 
-module.exports = { buildLaunch, routing, buildFeed, PUMP_PROGRAM_ID: PUMP_PROGRAM_ID.toBase58(), PUMP_FEE_PROGRAM_ID: PUMP_FEE_PROGRAM_ID.toBase58() };
+module.exports = { buildLaunch, quote, curveOf, routing, buildFeed, PUMP_PROGRAM_ID: PUMP_PROGRAM_ID.toBase58(), PUMP_FEE_PROGRAM_ID: PUMP_FEE_PROGRAM_ID.toBase58() };

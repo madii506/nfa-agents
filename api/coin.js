@@ -22,6 +22,14 @@ function image(dataUrl) {
   return { buf: b, type: png ? 'image/png' : jpg ? 'image/jpeg' : 'image/webp' };
 }
 
+// an optional social link: https only, on the right host; null when empty, undefined when it doesn't check out
+function link(v, host) {
+  v = String(v || '').trim(); if (!v) return null;
+  if (/^@?[A-Za-z0-9_]{1,15}$/.test(v) && String(host).includes('twitter')) v = 'https://x.com/' + v.replace(/^@/, '');
+  if (!/^https?:\/\//i.test(v)) v = 'https://' + v.replace(/^\/+/, '');
+  try { const u = new URL(v); if (!/^https?:$/.test(u.protocol) || !host.test(u.hostname) || v.length > 200) return undefined; u.protocol = 'https:'; return u.toString(); } catch { return undefined; }
+}
+
 async function post(req, res) {
   if (L.limited('coin:' + L.ip(req), 20, 600000)) return L.send(res, 200, { ok: false, error: 'Too many launches from here. Wait a few minutes.' });
   if (!L.dbReady()) return L.send(res, 200, { ok: false, error: 'nfa’s records are offline, so launching is paused. Try again shortly.' });
@@ -38,6 +46,9 @@ async function post(req, res) {
   if (!symOk(collection)) return L.send(res, 200, { ok: false, error: 'Pair it with a collection symbol from Magic Eden, like mad_lads.' });
   if (!policy) return L.send(res, 200, { ok: false, error: 'Choose holders or burn.' });
   const img = image(b.image); if (!img) return L.send(res, 200, { ok: false, error: 'The picture didn’t come through. Use a PNG, JPEG or WebP under 400 KB.' });
+  const links = {}; for (const [k, re, what] of [['twitter', /^(www\.|mobile\.)?(x|twitter)\.com$/i, 'X'], ['telegram', /^(www\.)?(t\.me|telegram\.me)$/i, 'Telegram'], ['website', /\./, 'website']]) {
+    const v = link(b[k], re); if (v === undefined) return L.send(res, 200, { ok: false, error: `That ${what} link doesn’t look right.` }); links[k] = v;
+  }
   // the collection must be real
   let coll_name = L.clean(b.coll_name, 64) || collection, coll_image = null;
   try {
@@ -47,17 +58,19 @@ async function post(req, res) {
   try { const i = await L.getJson(`${ME}/collections/${collection}`, {}, 6000); if (i.ok && i.json) { coll_name = L.clean(i.json.name, 64) || coll_name; coll_image = i.json.image || null; } } catch {}
   try { const acct = await L.rpc('getAccountInfo', [L.bondingCurveOf(mint), { encoding: 'base64' }]); if (acct && acct.value) return L.send(res, 200, { ok: false, error: 'That coin is already launched; its record can’t change.' }); }
   catch { return L.send(res, 200, { ok: false, error: 'Solana didn’t answer just now. Try again in a moment.' }); }
+  if (L.BANNED.test(String(b.description || ''))) return L.send(res, 200, { ok: false, error: 'Reword the description: no promises about returns.' });
   const desc = L.clean(b.description, 300) || `Paired with ${coll_name}. Its nfa agent spends 80% of this coin's creator fees buying ${coll_name} NFTs for ${policy === 'burn' ? 'the burn' : 'holders'}.`;
   const vault = L.vaultOfCoin(mint), treasury = L.TREASURY;
   try {
     await L.ready();
     const prev = await L.q('SELECT status, payer FROM nfa_coins WHERE mint=$1', [mint]);
     if (prev.length && prev[0].status !== 'pending') return L.send(res, 200, { ok: false, error: 'That coin is already recorded.' });
-    await L.q(`INSERT INTO nfa_coins (mint, name, symbol, description, collection, coll_name, coll_image, policy, payer, vault, treasury, image, image_type)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    await L.q(`INSERT INTO nfa_coins (mint, name, symbol, description, collection, coll_name, coll_image, policy, payer, vault, treasury, image, image_type, twitter, telegram, website)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
       ON CONFLICT (mint) DO UPDATE SET name=EXCLUDED.name, symbol=EXCLUDED.symbol, description=EXCLUDED.description, collection=EXCLUDED.collection, coll_name=EXCLUDED.coll_name,
-        coll_image=EXCLUDED.coll_image, policy=EXCLUDED.policy, payer=EXCLUDED.payer, image=EXCLUDED.image, image_type=EXCLUDED.image_type WHERE nfa_coins.status='pending'`,
-      [mint, name, symbol, desc, collection, coll_name, coll_image, policy, payer, vault, treasury, img.buf.toString('base64'), img.type]);
+        coll_image=EXCLUDED.coll_image, policy=EXCLUDED.policy, payer=EXCLUDED.payer, image=EXCLUDED.image, image_type=EXCLUDED.image_type,
+        twitter=EXCLUDED.twitter, telegram=EXCLUDED.telegram, website=EXCLUDED.website WHERE nfa_coins.status='pending'`,
+      [mint, name, symbol, desc, collection, coll_name, coll_image, policy, payer, vault, treasury, img.buf.toString('base64'), img.type, links.twitter, links.telegram, links.website]);
   } catch (e) { return L.send(res, 200, { ok: false, error: 'The coin’s record didn’t save. Try again.' }); }
   const site = L.origin(req);
   L.send(res, 200, { ok: true, uri: site + '/m/' + mint, image: site + '/i/' + mint, vault, treasury, studio: L.STUDIO, prefund: L.PREFUND, shares: L.sharesFor(mint), name, symbol, collection, coll_name, policy });
@@ -65,6 +78,7 @@ async function post(req, res) {
 
 async function get(req, res) {
   const qy = L.query(req);
+  if (qy.cfg) return L.send(res, 200, { ok: true, open: !!L.STUDIO && L.dbReady(), records: L.dbReady(), studio: L.STUDIO || null, treasury: L.TREASURY || null, prefund: L.PREFUND, split: L.SPLIT }, L.CACHE(20));
   if (!L.dbReady()) return L.send(res, 200, { ok: true, coins: [], receipts: [], offline: true }, L.CACHE(30));
   await L.ready();
   if (qy.list) {
