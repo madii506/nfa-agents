@@ -21,6 +21,9 @@
     },
     "api/meta.js": {
       "maxDuration": 30
+    },
+    "api/mkt.js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
