@@ -16,16 +16,14 @@
 <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
 <link rel="preload" href="/assets/fonts/jbm.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="modulepreload" href="/assets/vendor/three.module.min.js">
-<link rel="stylesheet" href="/assets/css/site.css?v=3">
+<link rel="stylesheet" href="/assets/css/site.css?v=4">
 </head>
 <body>
 <div id="intro" class="intro idle" aria-label="nfa">
   <canvas id="hall" aria-hidden="true"></canvas>
   <div id="marks" class="marks" aria-hidden="true"></div>
-  <div class="iload" id="iload"><div class="lmark"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M5 22V12.5Q5 5 12.5 5H22M42 5h9.5Q59 5 59 12.5V22M5 42v9.5Q5 59 12.5 59H22M42 59h9.5Q59 59 59 51.5V42" fill="none" stroke="#0b0c0e" stroke-width="6.5" stroke-linecap="round"/><rect class="e" x="21" y="23" width="7.2" height="17" rx="3.6" fill="#0b0c0e"/><rect class="e" x="35.8" y="23" width="7.2" height="17" rx="3.6" fill="#0b0c0e"/></svg><span></span></div></div>
-  <div class="ihint" id="ihint"><span class="h-idle">click or scroll to enter</span><span class="h-film">scroll to walk · hover a rack</span><span class="h-ready">click the screen</span></div>
+  <div class="ihint" id="ihint"><span class="h-idle">click or scroll to enter</span><span class="h-film">scroll to walk · hover a rack</span><span class="h-ready">click a screen</span></div>
   <div class="ictl l"><button type="button" id="isnd">sound</button></div>
-  <div class="ictl"><button type="button" id="iskip">skip ›</button></div>
 </div>
 
 <div id="app" class="app" hidden>
@@ -61,11 +59,11 @@
       </section>
     </aside>
   </main>
-  <footer class="sbar"><span id="sLeft"><i class="dot"></i>agent idle</span><span id="sMid" class="mid"></span><span id="sRight">not financial advice</span></footer>
+  <footer class="sbar"><span id="sLeft"><i class="dot"></i>agent idle</span><span id="sMid" class="mid"></span><span id="sRight"></span></footer>
 </div>
 <div class="flash" id="flash" aria-hidden="true"></div>
 <noscript><p style="font:14px monospace;color:#dfe6ef;padding:24px">nfa runs in your browser. Turn on JavaScript to enter.</p></noscript>
 <script src="/assets/js/config.js?v=1"></script>
-<script type="module" src="/assets/js/main.js?v=3"></script>
+<script type="module" src="/assets/js/main.js?v=4"></script>
 </body>
 </html>
