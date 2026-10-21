@@ -134,7 +134,8 @@ async function q(text, params = []) {
   if (!pg) { const { neon } = require('@neondatabase/serverless'); pg = neon(dbUrl()); }
   return pg.query(text, params);
 }
-function dbUrl() { const e = process.env; return e.DATABASE_URL || e.POSTGRES_URL || e.STORAGE_URL || e.STORAGE_DATABASE_URL || e.DATABASE_POSTGRES_URL || ''; }
+// nfa's own database first (NFA_*), then any other Postgres the project has
+function dbUrl() { const e = process.env; return e.NFA_DATABASE_URL || e.NFA_POSTGRES_URL || e.DATABASE_URL || e.POSTGRES_URL || e.STORAGE_URL || e.STORAGE_DATABASE_URL || e.DATABASE_POSTGRES_URL || ''; }
 const dbReady = () => !!(process.env.NI_PGLITE || dbUrl());
 function ready() {
   if (!made) made = (async () => {
