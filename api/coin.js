@@ -113,5 +113,5 @@ module.exports = async (req, res) => {
   try {
     if (req.method === 'POST') return await post(req, res);
     return await get(req, res);
-  } catch (e) { L.send(res, 200, { ok: false, error: 'Something went wrong reading the records.' }); }
+  } catch (e) { console.error('nfa coin', req.method, e && e.message); L.send(res, 200, { ok: false, error: 'Something went wrong reading the records.' }); }
 };

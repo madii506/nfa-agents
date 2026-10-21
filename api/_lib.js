@@ -149,8 +149,8 @@ function ready() {
       `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS twitter text`,
       `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS telegram text`,
       `ALTER TABLE nfa_coins ADD COLUMN IF NOT EXISTS website text`,
-    ]) await q(st);
-  })().catch(e => { made = null; throw e; });
+    ]) { try { await q(st); } catch (e) { if (!/already exists|duplicate key/i.test(String(e && e.message))) throw e; } }
+  })().catch(e => { made = null; console.error('nfa db setup', e && e.message); throw e; });
   return made;
 }
 
