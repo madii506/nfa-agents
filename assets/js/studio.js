@@ -42,7 +42,7 @@ export function installStudio(T, K) {
     root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', 'launch studio');
     root.innerHTML = `<div class="stu-in">
       <header class="stu-top">
-        <div class="stu-id">${MARK}<b>launch studio</b><span>pump.fun · paired with an NFT collection</span></div>
+        <div class="stu-id">${MARK}<b>launch studio</b></div>
         <ol class="stu-steps">${STEPS.map((s, i) => `<li data-s="${i}"><button type="button"><b>0${i + 1}</b><span>${s}</span></button></li>`).join('')}</ol>
         <button type="button" class="stu-x" aria-label="close the launch studio"><span>esc</span>✕</button>
       </header>
