@@ -386,40 +386,55 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
 
   // the side screens: live data, and each one a door into the site
   const SIDE = [
-    { mesh: P.sideL, x: -1.36, ry: .46, key: 'market', label: 'market feed · click to open it' },
-    { mesh: P.sideR, x: 1.36, ry: -.46, key: 'launch', label: 'launch studio · click to launch a coin' },
+    { mesh: P.sideL, x: -1.36, ry: .46, key: 'market', label: 'crypto charts · click to open them' },
+    { mesh: P.sideR, x: 1.36, ry: -.46, key: 'launch', label: 'launch · click to launch a coin' },
   ].map(o => { const c = V(o.x, 1.22, -40.95), n = V(Math.sin(o.ry), 0, Math.cos(o.ry)), rt = V(Math.cos(o.ry), 0, -Math.sin(o.ry));
     return { ...o, c, end: c.clone().add(n.clone().multiplyScalar(.17)), corners: [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => c.clone().add(rt.clone().multiplyScalar(a * .42)).add(V(0, b * .245, 0))) }; });
-  const D = { prices: null, pump: [], board: [], at: 0 };
+  const D = { prices: null, board: [], at: 0 };
   const getJ = u => fetch(u).then(r => (r.ok ? r.json() : null)).catch(() => null);
   async function feed() {
-    const [a, b, c] = await Promise.all([getJ('/api/mkt?op=prices'), getJ('/api/mkt?op=pump&k=new'), D.board.length ? null : getJ('/api/me?op=popular')]);
-    if (a && a.ok) D.prices = a.list; if (b && b.ok) D.pump = b.list || []; if (c && c.ok) D.board = c.list || [];
+    const [a, c] = await Promise.all([getJ('/api/mkt?op=prices'), D.board.length ? null : getJ('/api/me?op=popular')]);
+    if (a && a.ok) D.prices = a.list; if (c && c.ok) D.board = c.list || [];
     D.at = Date.now(); drawSide(0, performance.now()); drawSide(1, performance.now());
   }
+  // a day line: 24 hourly closes from Coinbase, scaled into a box; returns where it ends
+  function dayLine(g, sp, x0, y0, w, h, col, fill, lw) {
+    const lo = Math.min(...sp), hi = Math.max(...sp), r = hi - lo || 1, pts = sp.map((v, k) => [x0 + k / (sp.length - 1) * w, y0 + h - (v - lo) / r * h]);
+    const path = () => { g.beginPath(); pts.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); };
+    if (fill) { path(); g.lineTo(x0 + w, y0 + h); g.lineTo(x0, y0 + h); g.closePath(); g.fillStyle = fill; g.fill(); }
+    path(); g.strokeStyle = col; g.lineWidth = lw; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke();
+    return pts[pts.length - 1];
+  }
   const fmt = v => v == null || !isFinite(v) ? '—' : v >= 1000 ? '$' + Math.round(v).toLocaleString('en-US') : v >= 1 ? '$' + v.toFixed(2) : '$' + v.toPrecision(3);
-  const kfmt = v => v == null || !isFinite(v) ? '—' : v >= 1e6 ? '$' + (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? '$' + (v / 1e3).toFixed(1) + 'K' : '$' + Math.round(v);
   const pc = v => v == null || !isFinite(v) ? '' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
   function drawSide(i, now) {
     const g = P.sideC[i].getContext('2d'), W = 512, H = 300, tick = Math.floor(now / 600) % 2 === 0, hot = st && st.sideHov === i;
     g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
     g.strokeStyle = '#f0f1f3'; g.lineWidth = 1; for (let x = 32; x < W; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); } for (let y = 30; y < H; y += 30) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
     g.textBaseline = 'alphabetic'; g.font = `600 16px ${FONT}`; g.fillStyle = '#8a8e95'; g.textAlign = 'left';
-    g.fillText(i ? 'launch studio' : 'market feed', 18, 30);
-    g.textAlign = 'right'; g.fillStyle = tick ? '#0b0c0e' : '#b1b5bb'; g.fillText('● live', W - 18, 30); g.textAlign = 'left';
+    g.fillText(i ? 'launch studio' : 'crypto charts', 18, 30);
+    g.textAlign = 'right'; g.fillStyle = tick ? '#0b0c0e' : '#b1b5bb'; g.fillText(i ? '● live' : '● live · 24h', W - 18, 30); g.textAlign = 'left';
     if (i === 0) {
-      const sol = D.prices && D.prices.find(p => p.s === 'SOL');
-      g.fillStyle = '#0b0c0e'; g.font = `700 40px ${FONT}`; g.fillText(sol ? 'SOL ' + fmt(sol.price) : 'SOL —', 18, 78);
-      if (sol) { g.font = `600 18px ${FONT}`; g.fillStyle = sol.chg < 0 ? '#c4302b' : '#0b0c0e'; g.fillText(pc(sol.chg) + ' 24h', 20, 104); }
+      // crypto charts and nothing else: SOL big with its day line, BTC and ETH with theirs. All Coinbase, all live.
+      const by = s => (D.prices || []).find(p => p.s === s), red = '#c4302b', ink = '#0b0c0e';
+      const sol = by('SOL'), down = sol && sol.chg < 0;
+      g.fillStyle = ink; g.font = `700 34px ${FONT}`; g.fillText('SOL', 18, 74);
+      g.textAlign = 'right'; g.fillText(sol ? fmt(sol.price) : '—', W - 18, 74);
+      g.font = `600 15px ${FONT}`; g.fillStyle = !sol ? '#b1b5bb' : down ? red : '#6b6f75';
+      g.fillText(sol ? pc(sol.chg) : D.at ? 'no price right now' : 'reading coinbase…', W - 18, 96); g.textAlign = 'left';
       const sp = sol && sol.spark && sol.spark.length > 1 ? sol.spark : null;
-      if (sp) { const lo = Math.min(...sp), hi = Math.max(...sp), r = hi - lo || 1; g.strokeStyle = sol.chg < 0 ? '#c4302b' : '#0b0c0e'; g.lineWidth = 3; g.lineJoin = 'round'; g.beginPath(); sp.forEach((v, k) => { const x = 250 + k / (sp.length - 1) * 244, y = 102 - (v - lo) / r * 52; k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); }
-      g.font = `500 17px ${FONT}`;
-      const rows = (D.prices || []).filter(p => p.s === 'BTC' || p.s === 'ETH');
-      rows.forEach((p, k) => { const y = 140 + k * 26; g.fillStyle = '#0b0c0e'; g.fillText(p.s, 20, y); g.fillText(fmt(p.price), 80, y); g.fillStyle = p.chg < 0 ? '#c4302b' : '#6b6f75'; g.fillText(pc(p.chg), 250, y); });
-      g.fillStyle = '#8a8e95'; g.font = `600 14px ${FONT}`; g.fillText('new on pump.fun', 20, 192);
-      g.font = `500 17px ${FONT}`;
-      (D.pump || []).slice(0, 2).forEach((c, k) => { const y = 214 + k * 22; g.fillStyle = '#0b0c0e'; g.fillText(('$' + (c.symbol || '?')).slice(0, 12), 20, y); g.fillStyle = '#6b6f75'; g.fillText(kfmt(c.mcap), 190, y); });
-      if (!(D.pump || []).length) { g.fillStyle = '#b1b5bb'; g.fillText(D.at ? 'listening…' : 'reading…', 20, 214); }
+      if (sp) {
+        const end = dayLine(g, sp, 20, 108, W - 40, 60, down ? red : ink, down ? 'rgba(196,48,43,.08)' : 'rgba(11,12,14,.06)', 3);
+        g.fillStyle = down ? red : ink; g.beginPath(); g.arc(end[0], end[1], tick ? 5.5 : 4, 0, 7); g.fill();
+      }
+      ['BTC', 'ETH'].forEach((s, k) => {
+        const p = by(s), y = 200 + k * 28, dn = p && p.chg < 0;
+        g.font = `700 17px ${FONT}`; g.fillStyle = ink; g.fillText(s, 20, y);
+        g.font = `500 17px ${FONT}`; g.fillText(p ? fmt(p.price) : '—', 70, y);
+        if (p) { g.fillStyle = dn ? red : '#6b6f75'; g.fillText(pc(p.chg), 214, y); }
+        const s2 = p && p.spark && p.spark.length > 1 ? p.spark : null;
+        if (s2) dayLine(g, s2, 330, y - 17, W - 350, 18, dn ? red : ink, null, 2);
+      });
     } else {
       g.fillStyle = '#0b0c0e'; g.font = `700 36px ${FONT}`; g.fillText('launch a coin', 18, 76);
       g.font = `500 18px ${FONT}`; g.fillStyle = '#6b6f75'; g.fillText('paired with an NFT collection', 20, 104);
@@ -430,8 +445,10 @@ export async function run({ canvas, marks, mobile, sound, onEnter, onPhase, coin
       g.fillStyle = '#8a8e95'; g.font = `500 14px ${FONT}`; g.fillText('80% of fees → its agent · 20% → treasury', 20, 226);
     }
     // the door
-    g.fillStyle = hot ? '#0b0c0e' : '#ffffff'; g.strokeStyle = '#0b0c0e'; g.lineWidth = 2; g.fillRect(18, 248, 220, 36); g.strokeRect(18, 248, 220, 36);
-    g.fillStyle = hot ? '#ffffff' : '#0b0c0e'; g.font = `700 16px ${FONT}`; g.fillText(i ? 'click to launch  ›' : 'click to open  ›', 32, 272);
+    g.font = `700 16px ${FONT}`;
+    const dt = i ? 'click to launch  ›' : 'click to open the charts  ›', dw = Math.ceil(g.measureText(dt).width) + 28;
+    g.fillStyle = hot ? '#0b0c0e' : '#ffffff'; g.strokeStyle = '#0b0c0e'; g.lineWidth = 2; g.fillRect(18, 248, dw, 36); g.strokeRect(18, 248, dw, 36);
+    g.fillStyle = hot ? '#ffffff' : '#0b0c0e'; g.fillText(dt, 32, 272);
     P.sideT[i].needsUpdate = true;
   }
   const feedT = setInterval(() => { if (!document.hidden) feed(); }, 20000);

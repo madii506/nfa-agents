@@ -1,4 +1,8 @@
-// nfa boot: play the hall, then hand over to the terminal. ?term skips the hall; no WebGL skips it too.
+// nfa boot: play the hall, then open the room behind the screen you clicked. Three screens, three rooms:
+//   left    crypto charts   /?markets   markets.js, nothing else on the page
+//   middle  the terminal    /?term      term.js and everything in it
+//   right   launch          /?launch    the launch studio alone (term.js runs hidden underneath for the wallet code)
+// /?back lands on the three screens again; no WebGL skips the hall.
 import { createSound } from './sound.js';
 const $ = s => document.querySelector(s);
 // pictures from the open web fail in different ways: try the resizer, then Magic Eden's image CDN, then the file itself,
@@ -34,18 +38,31 @@ let entered = false;
 async function enter(how, go) {
   if (entered) return; entered = true;
   sound.scene('term');
-  const T = await termMod;
-  app.hidden = false; app.classList.add('boot');
   if (how === 'dive') $('#flash').classList.add('on');
-  intro.classList.add('gone'); setTimeout(() => intro.remove(), 800);
-  T.start({ sound, from: how, coins, mobile, go });
+  const leave = () => { intro.classList.add('gone'); setTimeout(() => intro.remove(), 800); };
+  const at = u => { if (location.pathname + location.search !== u) history.replaceState(null, '', u); };
+  if (go === 'market') {
+    try { const M = await import('./markets.js'); M.mount({ sound }); leave(); at('/?markets'); return; }
+    catch (e) { console.warn('markets', e); }
+  }
+  const T = await termMod;
+  if (go === 'launch') {
+    document.body.classList.add('solo-launch'); app.hidden = false; leave();
+    T.start({ sound, from: how, coins, mobile, solo: { pair: q.get('pair') } });
+    if (!q.has('pair')) at('/?launch');
+    return;
+  }
+  app.hidden = false; app.classList.add('boot'); leave();
+  T.start({ sound, from: how, coins, mobile });
 }
 function webgl() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } }
 
 async function boot() {
   const p = v => load.style.setProperty('--p', v + '%');
   p(12);
-  if (q.has('term') || q.has('coin') || q.has('launch') || q.has('pair') || !webgl()) { load.classList.add('done'); return enter('skip'); }
+  if (q.has('markets')) return enter('skip', 'market');
+  if (q.has('launch') || q.has('pair')) return enter('skip', 'launch');
+  if (q.has('term') || q.has('coin') || !webgl()) { load.classList.add('done'); return enter('skip'); }
   const listed = fetch('/api/coin?list=1').then(r => r.ok ? r.json() : null).then(j => (j && j.coins) || []).catch(() => []);
   const [hallMod] = await Promise.all([import('./hall.js').then(m => { p(70); return m; }), Promise.race([listed.then(c => { coins = c; }), new Promise(r => setTimeout(r, 1800))])]);
   p(88);
@@ -59,5 +76,6 @@ async function boot() {
   } catch (e) { console.warn('hall', e); load.classList.add('done'); return enter('skip'); }
   p(100); setTimeout(() => load.classList.add('done'), 200); requestAnimationFrame(() => intro.classList.add('live'));
   window.__hall = hall;
+  if (q.has('back')) { history.replaceState(null, '', '/'); hall.skip(); }       // back from a room: straight to the screens
 }
 boot();

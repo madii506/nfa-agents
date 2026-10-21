@@ -146,7 +146,7 @@ is nfa part of pump.fun, magic eden or tensor?
 const DIRS = { '/': ['readme.md', 'custody.md', 'fees.md', 'agent.md', 'draw.md', 'faq.md', 'links.txt', 'coins/'] };
 
 // ---------------------------------------------------------------- the terminal
-export function start({ sound, from, coins: initialCoins = [], mobile, go }) {
+export function start({ sound, from, coins: initialCoins = [], mobile, solo }) {
   const out = $('#out'), input = $('#cmd'), typed = $('#typed'), after = $('#after'), ghost = $('#ghost'), cur = $('#cur'), ps1 = $('#ps1');
   const app = $('#app'), alog = $('#alog'), faceEl = $('#face'), astat = $('#astat');
   const cmds = new Map(), alias = new Map();
@@ -322,7 +322,7 @@ export function start({ sound, from, coins: initialCoins = [], mobile, go }) {
   const cols = () => { if (!charW) { const m = document.createElement('span'); m.textContent = '0000000000'; m.style.cssText = 'position:absolute;visibility:hidden;white-space:pre'; out.appendChild(m); charW = m.getBoundingClientRect().width / 10 || 8.4; m.remove(); } return Math.max(30, Math.floor((out.clientWidth - 36) / charW)); };
   addEventListener('resize', () => { charW = 0; });
   const T = { print, node, text, type, lines, spinner, bar, k, links, esc, sleep, ask: askFor, run, reg, sound, mobile, store, face, PX, cmds, coins: initialCoins, cols, typeRun,
-    status, agentLog, agentState, agentStat, api, uptime: () => Date.now() - t0 };
+    status, agentLog, agentState, agentStat, api, uptime: () => Date.now() - t0, solo: !!solo };
   window.__term = T;
 
   // ---- api helper: JSON with a timeout and honest errors
@@ -570,7 +570,14 @@ export function start({ sound, from, coins: initialCoins = [], mobile, go }) {
 
   // ================================================================ modules, then the boot
   setPrompt();
-  const mods = Promise.all([import('./market.js').then(m => m.install(T)).catch(e => console.warn('market', e)), import('./launch.js').then(m => m.install(T)).catch(e => console.warn('launch', e)), import('./live.js').then(m => m.install(T)).catch(e => console.warn('live', e))]);
+  const mods = Promise.all([import('./market.js').then(m => m.install(T)).catch(e => console.warn('market', e)), import('./launch.js').then(m => m.install(T)).catch(e => console.warn('launch', e)),
+    solo ? null : import('./live.js').then(m => m.install(T)).catch(e => console.warn('live', e))]);
+  // the hall's right screen: the launch studio on its own, with no shell around it
+  if (solo) {
+    mods.then(() => T.studioReady).then(() => { T.ready = true; T.studio.open({ solo: true, c: solo.pair && /^[a-z0-9_\-]{2,64}$/i.test(solo.pair) ? solo.pair : undefined }); })
+      .catch(e => { console.warn('studio', e); location.replace('/?term'); });
+    return T;
+  }
   (async function boot() {
     status('agent starting', 'busy');
     const L = [
@@ -591,12 +598,9 @@ export function start({ sound, from, coins: initialCoins = [], mobile, go }) {
     await mods;
     try { installUX(T); } catch (e) { console.warn('ux', e); }
     T.ready = true;
-    // links into the site: ?coin=<mint> opens a coin, ?launch (or ?pair=<collection>) opens the launch studio
-    { const u = new URLSearchParams(location.search), c = u.get('coin'), pr = u.get('pair');
-      if (c && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(c)) run(T.coins.some(x => x.mint === c) ? 'coin ' + c : 'pump ' + c);
-      else if (u.has('launch') || pr) run('launch' + (pr && /^[a-z0-9_\-]{2,64}$/i.test(pr) ? ' ' + pr : ''));
-      else if (go === 'launch') run('launch');
-      else if (go === 'market') run('pump'); }
+    // links into the shell: ?coin=<mint> opens a coin (?launch and ?markets are rooms of their own, see main.js)
+    { const c = new URLSearchParams(location.search).get('coin');
+      if (c && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(c)) run(T.coins.some(x => x.mint === c) ? 'coin ' + c : 'pump ' + c); }
     if (!mobile) input.focus({ preventScroll: true });
     if (sound) sound.sfx('ok');
   })();

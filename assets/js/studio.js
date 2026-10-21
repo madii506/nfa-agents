@@ -501,7 +501,7 @@ export function installStudio(T, K) {
       const act = t.closest('[data-act]'); if (act) {
         const a = act.dataset.act;
         if (a === 'logout') { K.logout(); renderWal(); pv(); }
-        if (a === 'term') { const m = S.done && S.done.mint; close(); if (m) T.run('coin ' + m); }
+        if (a === 'term') { const m = S.done && S.done.mint; if (solo) { location.href = m ? '/?coin=' + encodeURIComponent(m) : '/?term'; return; } close(); if (m) T.run('coin ' + m); }
         if (a === 'again') again();
         if (a === 'route') { act.disabled = true; act.textContent = 'locking…'; K.route(act.dataset.mint).then(() => { act.textContent = 'locked 80/20'; sfx('ok'); }).catch(err => { act.disabled = false; act.textContent = 'lock the fees now'; hint(K.human(err), true); }); }
       }
@@ -535,8 +535,10 @@ export function installStudio(T, K) {
   }
 
   // ================================================================ open and close
+  let solo = false;     // opened from the hall's right screen: the studio is the whole page, closing it goes back to the hall
   function open(o = {}) {
     if (!root) build();
+    if (o.solo && !solo) { solo = true; root.classList.add('solo'); const x = $('.stu-x'); x.innerHTML = '← hall'; x.setAttribute('aria-label', 'back to the hall'); }
     if (S.done && !S.busy) again();
     loadBoard().then(() => { const had = S.extra.length; restore(); if (S.extra.length !== had || S.coll) renderGrid(); fillInputs(); if (S.face) { paintStage(); paintFaceCtl(); } pv();
       const want = o.c ? normSym(o.c) : null;
@@ -552,6 +554,7 @@ export function installStudio(T, K) {
   }
   function close() {
     if (S.busy) { hint('the launch is running. finish it in your wallet.', true); return; }
+    if (solo) { location.href = '/?back'; return; }
     root.classList.remove('on', 'pvopen'); document.body.classList.remove('stu-open');
     setTimeout(() => { if (!root.classList.contains('on')) root.hidden = true; }, 280);
     sfx('tick');
