@@ -88,7 +88,7 @@ function pickFrom(floor, ls) {
 // a picture that actually loads: an image content type and a 200 or 206, inside a few seconds
 async function loads(url) {
   if (!url || !/^https:\/\//.test(url) || L.MOCK) return !!url && !L.MOCK ? false : !!url;
-  try { const r = await fetch(url, { headers: { range: 'bytes=0-2047', 'user-agent': L.UA }, signal: AbortSignal.timeout(5000) }); try { r.body && r.body.cancel && await r.body.cancel(); } catch {} return (r.status === 200 || r.status === 206) && /^image\//.test(r.headers.get('content-type') || ''); }
+  try { const r = await fetch(url, { headers: { range: 'bytes=0-2047', 'user-agent': L.UA }, signal: AbortSignal.timeout(8000) }); try { r.body && r.body.cancel && await r.body.cancel(); } catch {} return (r.status === 200 || r.status === 206) && /^image\//.test(r.headers.get('content-type') || ''); }
   catch { return false; }
 }
 async function pictureFor(c, given) {
@@ -99,7 +99,10 @@ async function pictureFor(c, given) {
   for (const u of tries) if (await loads(u)) return { image: u, name: info && info.name };
   const ls = await listings(c).catch(() => []);
   for (const l of ls.slice(0, 4)) if (l.img && await loads(l.img)) return { image: l.img, name: info && info.name };
-  return { image: null, name: info && info.name };
+  // nothing answered in time from here: keep the best candidate anyway, the page's own fallbacks (resizer, Magic Eden's
+  // image CDN, the file itself) usually still get it on screen
+  const any = tries[0] || (ls.find(l => l.img) || {}).img || null;
+  return { image: any, name: info && info.name };
 }
 const rowOut = r => ({ c: r.symbol, name: r.name, image: r.image, floor: r.floor, listed: r.listed, avg24: r.avg24, vol7: r.vol7 });
 async function boardDb() {
@@ -107,7 +110,7 @@ async function boardDb() {
   const rows = await L.q('SELECT * FROM nfa_colls');
   const by = new Map(rows.map(r => [r.symbol, r])), now = Date.now(), age = r => now - Date.parse(r.updated_at);
   const due = WATCH.map(([c, name, img], i) => ({ c, name, img, i, r: by.get(c) }))
-    .filter(x => !x.r || (x.r.ok ? age(x.r) > 10 * 60e3 : age(x.r) > 24 * 3600e3))
+    .filter(x => !x.r || (x.r.ok ? age(x.r) > (x.r.image ? 10 * 60e3 : 2 * 60e3) : age(x.r) > 24 * 3600e3))
     .sort((a, b) => (a.r ? 1 : 0) - (b.r ? 1 : 0) || (a.r && b.r ? age(b.r) - age(a.r) : a.i - b.i)).slice(0, 8);
   await L.pool(due, 2, async x => {
     try {
