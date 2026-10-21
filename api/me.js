@@ -90,16 +90,29 @@ function pickFrom(floor, ls) {
 }
 
 
-// a picture that actually loads: a 200 or 206 with an image (or plain binary) body, inside eight seconds. Error pages
-// (html, json) don't count.
+// a picture that actually loads: the first bytes have to be an image (png, jpeg, gif, webp, avif or svg), inside eight
+// seconds. Dead gateways that answer 200 with an error text don't pass.
+const IMG_CHECK = 2;
+function isImage(b) {
+  if (!b || b.length < 4) return false;
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e) return true;                    // png
+  if (b[0] === 0xff && b[1] === 0xd8) return true;                                     // jpeg
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return true;                    // gif
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b.length > 11 && b[8] === 0x57 && b[9] === 0x45) return true;   // webp
+  if (b.length > 11 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) return true;   // avif / heic
+  const head = Buffer.from(b.slice(0, 256)).toString('utf8').trimStart().toLowerCase();
+  return head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'));
+}
 async function loads(url) {
   if (!url || !/^https:\/\//.test(url)) return false;
   if (L.MOCK) return true;
   try {
-    const r = await fetch(url, { headers: { range: 'bytes=0-2047', 'user-agent': L.UA, accept: 'image/*,*/*;q=0.8' }, signal: AbortSignal.timeout(8000) });
-    try { r.body && r.body.cancel && await r.body.cancel(); } catch {}
-    const ct = (r.headers.get('content-type') || '').toLowerCase();
-    return (r.status === 200 || r.status === 206) && !/text\/html|json|xml/.test(ct);
+    const r = await fetch(url, { headers: { range: 'bytes=0-4095', 'user-agent': L.UA, accept: 'image/*,*/*;q=0.8' }, signal: AbortSignal.timeout(8000) });
+    if (r.status !== 200 && r.status !== 206) { try { r.body && await r.body.cancel(); } catch {} return false; }
+    const rd = r.body.getReader(); let got = new Uint8Array(0);
+    while (got.length < 64) { const { value, done } = await rd.read(); if (done || !value) break; const n = new Uint8Array(got.length + value.length); n.set(got); n.set(value, got.length); got = n; }
+    try { await rd.cancel(); } catch {}
+    return isImage(got);
   } catch { return false; }
 }
 async function pictureFor(c, given) {
@@ -119,22 +132,23 @@ async function boardDb() {
   const rows = await L.q('SELECT * FROM nfa_colls');
   const by = new Map(rows.map(r => [r.symbol, r])), now = Date.now(), age = r => now - Date.parse(r.updated_at);
   const due = WATCH.map(([c, name, img], i) => ({ c, name, img, i, r: by.get(c) }))
-    .filter(x => !x.r || (!x.r.ok ? age(x.r) > 24 * 3600e3 : x.r.img_ok == null ? age(x.r) > 60e3 : x.r.img_ok === false ? age(x.r) > 12 * 3600e3 : age(x.r) > 10 * 60e3))
+    .filter(x => !x.r || (!x.r.ok ? age(x.r) > 24 * 3600e3 : (x.r.img_chk || 0) < IMG_CHECK ? true : x.r.img_ok === false ? age(x.r) > 12 * 3600e3 : age(x.r) > 10 * 60e3))
     .sort((a, b) => (a.r ? 1 : 0) - (b.r ? 1 : 0) || (a.r && b.r ? age(b.r) - age(a.r) : a.i - b.i)).slice(0, 8);
   await L.pool(due, 2, async x => {
     try {
       const s = await me(`/collections/${x.c}/stats`, 120000);
       if (!s || s.floorPrice == null) throw Object.assign(new Error('empty'), { code: 404 });
       let name = (x.r && x.r.name) || x.name || x.c, image = x.r && x.r.image, imgOk = x.r ? x.r.img_ok : null;
-      if (!image || !x.r || imgOk !== true) { const p = await pictureFor(x.c, x.img); image = p.image; imgOk = p.ok; if (p.name) name = L.clean(p.name, 64); }
-      await L.q(`INSERT INTO nfa_colls (symbol, name, image, floor, listed, avg24, vol7, ok, img_ok, img_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8,now(),now())
-        ON CONFLICT (symbol) DO UPDATE SET name=EXCLUDED.name, image=EXCLUDED.image, floor=EXCLUDED.floor, listed=EXCLUDED.listed, avg24=EXCLUDED.avg24, vol7=EXCLUDED.vol7, ok=true, img_ok=EXCLUDED.img_ok, img_at=now(), updated_at=now()`,
+      if (!image || !x.r || imgOk !== true || (x.r.img_chk || 0) < IMG_CHECK) { const p = await pictureFor(x.c, x.img); image = p.image; imgOk = p.ok; if (p.name) name = L.clean(p.name, 64); }
+      await L.q(`INSERT INTO nfa_colls (symbol, name, image, floor, listed, avg24, vol7, ok, img_ok, img_chk, img_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8,${IMG_CHECK},now(),now())
+        ON CONFLICT (symbol) DO UPDATE SET name=EXCLUDED.name, image=EXCLUDED.image, floor=EXCLUDED.floor, listed=EXCLUDED.listed, avg24=EXCLUDED.avg24, vol7=EXCLUDED.vol7, ok=true, img_ok=EXCLUDED.img_ok, img_chk=EXCLUDED.img_chk, img_at=now(), updated_at=now()`,
         [x.c, name, image, lam(s.floorPrice), s.listedCount ?? null, lam(s.avgPrice24hr), lam(s.volume7d), imgOk]);
     } catch (e) {
       if (e.code === 404) await L.q(`INSERT INTO nfa_colls (symbol, ok, updated_at) VALUES ($1,false,now()) ON CONFLICT (symbol) DO UPDATE SET ok=false, updated_at=now()`, [x.c]).catch(() => {});
     }
   });
   const fresh = await L.q('SELECT * FROM nfa_colls WHERE ok AND floor IS NOT NULL AND image IS NOT NULL AND img_ok IS NOT FALSE');
+  // the check runs eight collections a call; until a row has passed this version of it, keep it only if it passed before
   const keep = new Set(WATCH.map(w => w[0]));
   return fresh.filter(r => keep.has(r.symbol)).map(rowOut).sort((a, b) => (b.vol7 || 0) - (a.vol7 || 0));
 }
